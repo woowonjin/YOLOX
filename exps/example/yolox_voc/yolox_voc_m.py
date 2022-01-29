@@ -14,6 +14,7 @@ class Exp(MyExp):
         self.num_classes = 11
         self.depth = 0.67
         self.width = 0.75
+        self.eval_interval = 5
 
         self.exp_name = os.path.split(os.path.realpath(__file__))[1].split(".")[0]
 
