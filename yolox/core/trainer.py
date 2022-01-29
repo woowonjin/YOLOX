@@ -10,6 +10,7 @@ from loguru import logger
 import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
+import wandb
 
 from yolox.data import DataPrefetcher
 from yolox.utils import (
@@ -67,6 +68,7 @@ class Trainer:
         )
 
     def train(self):
+        wandb.init(entity="woowonjin", project="Nota-yolox", name=self.args.run_name, config=self.args)
         self.before_train()
         try:
             self.train_in_epoch()
@@ -101,6 +103,9 @@ class Trainer:
             outputs = self.model(inps, targets)
 
         loss = outputs["total_loss"]
+        wandb.log({"loss": loss}, step=self.epoch+1)
+        #"total_loss", "iou_loss", "l1_loss", "conf_loss", "cls_loss", "num_fg"
+
 
         self.optimizer.zero_grad()
         self.scaler.scale(loss).backward()
@@ -308,6 +313,8 @@ class Trainer:
             self.tblogger.add_scalar("val/COCOAP50_95", ap50_95, self.epoch + 1)
             logger.info("\n" + summary)
         synchronize()
+
+        wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=self.epoch+1)
 
         self.save_ckpt("last_epoch", ap50_95 > self.best_ap)
         self.best_ap = max(self.best_ap, ap50_95)

@@ -9,6 +9,7 @@ from loguru import logger
 
 import torch
 import torch.backends.cudnn as cudnn
+import wandb
 
 from yolox.core import Trainer, launch
 from yolox.exp import get_exp
@@ -58,6 +59,11 @@ def make_parser():
     parser.add_argument(
         "--machine_rank", default=0, type=int, help="node rank for multi-node training"
     )
+
+    parser.add_argument(
+        "--run_name", default="yolox-small", type=str, help="node rank for multi-node training"
+    )
+
     parser.add_argument(
         "--fp16",
         dest="fp16",
@@ -115,8 +121,13 @@ if __name__ == "__main__":
     exp = get_exp(args.exp_file, args.name)
     exp.merge(args.opts)
 
+    ### wandb login
+    wandb.login()
+
     if not args.experiment_name:
         args.experiment_name = exp.exp_name
+
+    # wandb.config.update(args)
 
     num_gpu = get_num_devices() if args.devices is None else args.devices
     assert num_gpu <= get_num_devices()
