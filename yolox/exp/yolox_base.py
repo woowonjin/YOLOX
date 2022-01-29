@@ -17,15 +17,15 @@ class Exp(BaseExp):
         super().__init__()
 
         # ---------------- model config ---------------- #
-        self.num_classes = 80
+        self.num_classes = 11
         self.depth = 1.00
         self.width = 1.00
         self.act = 'silu'
 
         # ---------------- dataloader config ---------------- #
         # set worker to 4 for shorter dataloader init time
-        self.data_num_workers = 4
-        self.input_size = (640, 640)  # (height, width)
+        self.data_num_workers = 0
+        self.input_size = (544, 960)  # (height, width)
         # Actual multiscale ranges: [640-5*32, 640+5*32].
         # To disable multiscale training, set the
         # self.multiscale_range to 0.
@@ -66,7 +66,7 @@ class Exp(BaseExp):
         self.exp_name = os.path.split(os.path.realpath(__file__))[1].split(".")[0]
 
         # -----------------  testing config ------------------ #
-        self.test_size = (640, 640)
+        self.test_size = (544, 960)
         self.test_conf = 0.01
         self.nmsthre = 0.65
 
