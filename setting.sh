@@ -1,4 +1,5 @@
 apt-get update
+pip install -r requirements.txt
 pip install loguru
 pip install thop
 pip install torch==1.7.0 torchvision==0.8.1
