@@ -150,58 +150,71 @@ class YOLOXHead(nn.Module):
         for k, (cls_conv, reg_conv, stride_this_level, x) in enumerate(
             zip(self.cls_convs, self.reg_convs, self.strides, xin)
         ):
-            x = self.stems[k](x)
+            x = self.stems[k](x) # 256 -> 256, 512 -> 256, 1024 -> 256 (channel)
             cls_x = x
             reg_x = x
 
-            cls_feat = cls_conv(cls_x)
-            cls_output = self.cls_preds[k](cls_feat)
+            cls_feat = cls_conv(cls_x) # cls_conv : 256 -> 256 (channel)
+            cls_output = self.cls_preds[k](cls_feat) # cls_preds : 256 -> n_anchor * num_classes (channel)
 
-            reg_feat = reg_conv(reg_x)
-            reg_output = self.reg_preds[k](reg_feat)
-            obj_output = self.obj_preds[k](reg_feat)
+            reg_feat = reg_conv(reg_x) # reg_conv : 256 -> 256 (channel)
+            reg_output = self.reg_preds[k](reg_feat) # reg_preds : 256 -> 4 (channel)
+            obj_output = self.obj_preds[k](reg_feat) # obj_preds : 256 -> n_anchor * 1 (channel)
 
+             # outputs : [tensor([2, 16, 68, 120]), tensor([2, 16, 34, 60]), tensor([2, 16, 17, 30])]
             if self.training:
-                output = torch.cat([reg_output, obj_output, cls_output], 1)
-                output, grid = self.get_output_and_grid(
+                output = torch.cat([reg_output, obj_output, cls_output], 1) # [2, 16, 68, 120]
+                output, grid = self.get_output_and_grid( # strides=[8, 16, 32]
                     output, k, stride_this_level, xin[0].type()
-                )
-                x_shifts.append(grid[:, :, 0])
+                ) # output : [2, 1*68*120, 16], grid : [1, 1*68*120, 2]
+                x_shifts.append(grid[:, :, 0]) # grid : [... [x, y]]
                 y_shifts.append(grid[:, :, 1])
                 expanded_strides.append(
                     torch.zeros(1, grid.shape[1])
                     .fill_(stride_this_level)
                     .type_as(xin[0])
-                )
+                ) # expanded_strides : [[8, 8, 8, 8, .....], [16, 16, 16, ....], [32, 32, 32, ....]]
                 if self.use_l1:
                     batch_size = reg_output.shape[0]
                     hsize, wsize = reg_output.shape[-2:]
                     reg_output = reg_output.view(
                         batch_size, self.n_anchors, 4, hsize, wsize
-                    )
+                    ) # [2, 1, 4, 68, 120] -> 여기서 4는 width, height인듯
                     reg_output = reg_output.permute(0, 1, 3, 4, 2).reshape(
                         batch_size, -1, 4
-                    )
+                    ) # [2, 1, 4, 68, 120] -> [2, 1, 68, 120, 4] -> [2, 1*68*120, 4] 
                     origin_preds.append(reg_output.clone())
 
             else:
+                # print(f"reg : {reg_output.size()}, obj : {obj_output.size()} cls : {cls_output.size()}")
                 output = torch.cat(
                     [reg_output, obj_output.sigmoid(), cls_output.sigmoid()], 1
                 )
+            # 다른점 : training시에는 get_output_and_grid함수에서 output의 (x, y, w, h) 에 grid값을 더해주고 stride값을 곱해주지만 eval모드에서는 그렇지 않다.
 
             outputs.append(output)
-
+        # training_mode outputs : [tensor([2, 1*68*120, 16]), tensor([2, 1*34*60, 16]), tensor([2, 1*17*30, 16])]
+        # eval_mode outputs : [tensor([2, 16, 68, 120]), tensor([2, 16, 34, 60]), tensor([2, 16, 17, 30])]
         if self.training:
             return self.get_losses(
                 imgs,
-                x_shifts,
-                y_shifts,
-                expanded_strides,
+                x_shifts, # [1, 1*68*120, 1]
+                y_shifts, # [1, 1*68*120, 1]
+                expanded_strides, # expanded_strides : [[8]*8160, [16]*2040, [32]*510]
                 labels,
-                torch.cat(outputs, 1),
-                origin_preds,
+                torch.cat(outputs, 1), # [2, 10710, 16]
+                origin_preds, # [[2, 1*68*120, 4], [2, 1*34*60, 4], [2, 1*17*30, 4]]
                 dtype=xin[0].dtype,
             )
+        elif self.compress_mode:
+            # outputs = torch.cat(
+            #     [x.flatten(start_dim=2) for x in outputs], dim=2
+            # ).permute(0, 2, 1) # [tensor([2, 16, 68, 120]), tensor([2, 16, 34, 60]), tensor([2, 16, 17, 30])]
+            #                       -> [ [2, 16, 8160], [2, 16, 2040] , [2, 16, 510]] -> [2, 16, 10710] -> [2, 10710, 2]
+            print("="*50)
+            print("self.compress_mode == True")
+            print("="*50)
+            return outputs 
         else:
             self.hw = [x.shape[-2:] for x in outputs]
             # [batch, n_anchors_all, 85]
@@ -209,29 +222,39 @@ class YOLOXHead(nn.Module):
                 [x.flatten(start_dim=2) for x in outputs], dim=2
             ).permute(0, 2, 1)
             if self.decode_in_inference:
+                print("="*50)
+                print("self.compress_mode == False")
+                print("self.decode_in_inference == True")
+                print("="*50)
                 return self.decode_outputs(outputs, dtype=xin[0].type())
             else:
+                print("="*50)
+                print("self.compress_mode == False")
+                print("self.decode_in_inference == False")
+                print("="*50)
                 return outputs
 
     def get_output_and_grid(self, output, k, stride, dtype):
-        grid = self.grids[k]
 
+        grid = self.grids[k] # tensor([0.])
+
+        # output : [2, 16, 68, 120]
         batch_size = output.shape[0]
-        n_ch = 5 + self.num_classes
-        hsize, wsize = output.shape[-2:]
+        n_ch = 5 + self.num_classes # [x, y, width, height, confidence, classes] ?
+        hsize, wsize = output.shape[-2:] # [68, 120]
         if grid.shape[2:4] != output.shape[2:4]:
-            yv, xv = torch.meshgrid([torch.arange(hsize), torch.arange(wsize)])
-            grid = torch.stack((xv, yv), 2).view(1, 1, hsize, wsize, 2).type(dtype)
-            self.grids[k] = grid
-
-        output = output.view(batch_size, self.n_anchors, n_ch, hsize, wsize)
+            yv, xv = torch.meshgrid([torch.arange(hsize), torch.arange(wsize)]) 
+            grid = torch.stack((xv, yv), 2).view(1, 1, hsize, wsize, 2).type(dtype) # [ [ [ [[0, 0], [1, 0], [2,0] ...], [ [0, 1], [1, 1]... ] ] ] ]
+            self.grids[k] = grid # [1, 1, 68, 120, 2]
+        # n_anchors = 1 
+        output = output.view(batch_size, self.n_anchors, n_ch, hsize, wsize) # output : [2, 1, 16, 68, 120]
         output = output.permute(0, 1, 3, 4, 2).reshape(
             batch_size, self.n_anchors * hsize * wsize, -1
-        )
-        grid = grid.view(1, -1, 2)
-        output[..., :2] = (output[..., :2] + grid) * stride
+        ) # output : [2, 1, 16, 68, 120] -> [2, 1, 68, 120, 16] -> [2, 1*68*120, 16]
+        grid = grid.view(1, -1, 2) # grid : [1, 1*68*120, 2]
+        output[..., :2] = (output[..., :2] + grid) * stride # stride = 8
         output[..., 2:4] = torch.exp(output[..., 2:4]) * stride
-        return output, grid
+        return output, grid # output : [2, 1*68*120, 16], grid : [1, 1*68*120, 2]
 
     def decode_outputs(self, outputs, dtype):
         grids = []
