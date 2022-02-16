@@ -191,7 +191,8 @@ class YOLOXHead(nn.Module):
                 output = torch.cat(
                     [reg_output, obj_output.sigmoid(), cls_output.sigmoid()], 1
                 )
-            # 다른점 : training시에는 get_output_and_grid함수에서 output의 (x, y, w, h) 에 grid값을 더해주고 stride값을 곱해주지만 eval모드에서는 그렇지 않다.
+            # 다른점 : training시에는 get_output_and_grid함수에서 output의 (x, y, w, h) 에 grid값을 더해주고 stride값을 곱해주지만
+            # eval모드에서는 그렇지 않고 obj_output과 cls_output에 sigmoid를 해준다.
 
             outputs.append(output)
         # training_mode outputs : [tensor([batch, 1*68*120, 16]), tensor([batch, 1*34*60, 16]), tensor([batch, 1*17*30, 16])]
@@ -207,15 +208,15 @@ class YOLOXHead(nn.Module):
                 origin_preds, # [[batch, 1*68*120, 4], [batch, 1*34*60, 4], [batch, 1*17*30, 4]]
                 dtype=xin[0].dtype,
             )
-        # elif self.compress_mode:
-            # outputs = torch.cat(
-            #     [x.flatten(start_dim=2) for x in outputs], dim=2
-            # ).permute(0, 2, 1) # [tensor([batch, 16, 68, 120]), tensor([batch, 16, 34, 60]), tensor([batch, 16, 17, 30])]
-            #                       -> [ [batch, 16, 8160], [batch, 16, 2040] , [batch, 16, 510]] -> [batch, 16, 10710] -> [batch, 10710, 16]
-            # print("="*50)
-            # print("self.compress_mode == True")
-            # print("="*50)
-            # return outputs 
+        elif self.compress_mode:
+            outputs = torch.cat(
+                [x.flatten(start_dim=2) for x in outputs], dim=2
+            ).permute(0, 2, 1) # [tensor([batch, 16, 68, 120]), tensor([batch, 16, 34, 60]), tensor([batch, 16, 17, 30])]
+                                #   -> [ [batch, 16, 8160], [batch, 16, 2040] , [batch, 16, 510]] -> [batch, 16, 10710] -> [batch, 10710, 16]
+            print("="*50)
+            print("self.compress_mode == True")
+            print("="*50)
+            return outputs 
         else:
             self.hw = [x.shape[-2:] for x in outputs] # [[68, 120], [34, 60], [17, 30]]
             # [batch, n_anchors_all, 85]
@@ -258,17 +259,19 @@ class YOLOXHead(nn.Module):
         return output, grid # output : [batch, 1*68*120, 16], grid : [1, 1*68*120, 2]
 
     def decode_outputs(self, outputs, dtype):
+        #outputs : [batch, 10710, 16]
         grids = []
         strides = []
+        # self.hw : [[68, 120], [34, 60], [17, 30]], self.strides : [8, 16, 32]
         for (hsize, wsize), stride in zip(self.hw, self.strides):
             yv, xv = torch.meshgrid([torch.arange(hsize), torch.arange(wsize)])
             grid = torch.stack((xv, yv), 2).view(1, -1, 2)
             grids.append(grid)
             shape = grid.shape[:2]
-            strides.append(torch.full((*shape, 1), stride))
+            strides.append(torch.full((*shape, 1), stride)) # torch.full(size->tuple or list, fill_value) -> value로 size tensor만큼을 채운다.
 
-        grids = torch.cat(grids, dim=1).type(dtype)
-        strides = torch.cat(strides, dim=1).type(dtype)
+        grids = torch.cat(grids, dim=1).type(dtype) # [1, 10710, 2]
+        strides = torch.cat(strides, dim=1).type(dtype) # [[8, 8, 8, 8, .....], [16, 16, 16, ....], [32, 32, 32, ....]]
 
         outputs[..., :2] = (outputs[..., :2] + grids) * strides
         outputs[..., 2:4] = torch.exp(outputs[..., 2:4]) * strides
@@ -291,9 +294,9 @@ class YOLOXHead(nn.Module):
 
         # calculate targets
         # labels : [batch, 120, 5] -> 5 : label, xmin, ymin, xmax, ymax
-        nlabel = (labels.sum(dim=2) > 0).sum(dim=1)  # number of objects
+        nlabel = (labels.sum(dim=2) > 0).sum(dim=1)  # number of objects -> object이 없으면 [label, xmin, ymin, xmax, ymax] == [0, 0, 0, 0, 0]
 
-        total_num_anchors = outputs.shape[1]
+        total_num_anchors = outputs.shape[1] # 10710
         x_shifts = torch.cat(x_shifts, 1)  # [1, 10710, 1]
         y_shifts = torch.cat(y_shifts, 1)  # [1, 10710, 1]
         expanded_strides = torch.cat(expanded_strides, 1) # [1, 10710] -> [[8, 8, 8, ..., 16, 16, 16, .., 32, 32, 32]]
@@ -309,8 +312,8 @@ class YOLOXHead(nn.Module):
         num_fg = 0.0
         num_gts = 0.0
 
-        for batch_idx in range(outputs.shape[0]):
-            num_gt = int(nlabel[batch_idx])
+        for batch_idx in range(outputs.shape[0]): # outputs : [batch, 10710, 16]
+            num_gt = int(nlabel[batch_idx]) # number of ground truth
             num_gts += num_gt
             if num_gt == 0:
                 cls_target = outputs.new_zeros((0, self.num_classes))
@@ -319,9 +322,10 @@ class YOLOXHead(nn.Module):
                 obj_target = outputs.new_zeros((total_num_anchors, 1))
                 fg_mask = outputs.new_zeros(total_num_anchors).bool()
             else:
+                # labels : [2, 120, 5]
                 gt_bboxes_per_image = labels[batch_idx, :num_gt, 1:5]
                 gt_classes = labels[batch_idx, :num_gt, 0]
-                bboxes_preds_per_image = bbox_preds[batch_idx]
+                bboxes_preds_per_image = bbox_preds[batch_idx] # bbox_preds -> [batch, 10710, 4]
 
                 try:
                     (
@@ -333,18 +337,18 @@ class YOLOXHead(nn.Module):
                     ) = self.get_assignments(  # noqa
                         batch_idx,
                         num_gt,
-                        total_num_anchors,
-                        gt_bboxes_per_image,
-                        gt_classes,
-                        bboxes_preds_per_image,
-                        expanded_strides,
-                        x_shifts,
-                        y_shifts,
-                        cls_preds,
-                        bbox_preds,
-                        obj_preds,
-                        labels,
-                        imgs,
+                        total_num_anchors, # 10710
+                        gt_bboxes_per_image, # [num_gt, 4]
+                        gt_classes, # [num_gt, 1]
+                        bboxes_preds_per_image, # [10710, 4]
+                        expanded_strides, # [1, 10710] -> [[8, 8, 8, ..., 16, 16, 16, .., 32, 32, 32]]
+                        x_shifts, # [[1, 1*68*120, 1], [1, 1*34*60, 1], [1, 1*17*30, 1]]
+                        y_shifts, # [[1, 1*68*120, 1], [1, 1*34*60, 1], [1, 1*17*30, 1]]
+                        cls_preds, # [batch, 10710, 11]
+                        bbox_preds, # [batch, 10710, 4]
+                        obj_preds, # [batch, 10710, 1]
+                        labels, # [batch, 120, 5]
+                        imgs, # [batch, 3, 544, 960]
                     )
                 except RuntimeError:
                     logger.error(
@@ -370,7 +374,7 @@ class YOLOXHead(nn.Module):
                         x_shifts,
                         y_shifts,
                         cls_preds,
-                        bbox_preds,
+                        bbox_preds, 
                         obj_preds,
                         labels,
                         imgs,
@@ -451,18 +455,18 @@ class YOLOXHead(nn.Module):
         self,
         batch_idx,
         num_gt,
-        total_num_anchors,
-        gt_bboxes_per_image,
-        gt_classes,
-        bboxes_preds_per_image,
-        expanded_strides,
-        x_shifts,
-        y_shifts,
-        cls_preds,
-        bbox_preds,
-        obj_preds,
-        labels,
-        imgs,
+        total_num_anchors, # 10710
+        gt_bboxes_per_image, # [num_gt, 4]
+        gt_classes, # [num_gt, 1]
+        bboxes_preds_per_image, # [10710, 4]
+        expanded_strides, # [1, 10710] -> [[8, 8, 8, ..., 16, 16, 16, .., 32, 32, 32]]
+        x_shifts, # [[1, 1*68*120, 1], [1, 1*34*60, 1], [1, 1*17*30, 1]]
+        y_shifts, # [[1, 1*68*120, 1], [1, 1*34*60, 1], [1, 1*17*30, 1]]
+        cls_preds, # [batch, 10710, 11]
+        bbox_preds, # [batch, 10710, 4]
+        obj_preds, # [batch, 10710, 1]
+        labels, # [batch, 120, 5]
+        imgs, # [batch, 3, 544, 960]
         mode="gpu",
     ):
 
