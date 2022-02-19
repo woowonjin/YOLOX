@@ -401,7 +401,7 @@ class YOLOXHead(nn.Module):
             reg_targets.append(reg_target) # [num_fg_img, 4]
             obj_targets.append(obj_target.to(dtype)) # [10710, 1]
             fg_masks.append(fg_mask) # [10710]
-            print(f"cls_target : {cls_target.size()}, reg_target : {reg_target.size()}, obj_target : {obj_target.size()}, fg_mask : {fg_mask.size()}, dtype : {dtype}")
+            # print(f"cls_target : {cls_target.size()}, reg_target : {reg_target.size()}, obj_target : {obj_target.size()}, fg_mask : {fg_mask.size()}, dtype : {dtype}")
             if self.use_l1:
                 l1_targets.append(l1_target)
 
@@ -414,14 +414,14 @@ class YOLOXHead(nn.Module):
 
         num_fg = max(num_fg, 1)
         loss_iou = (
-            self.iou_loss(bbox_preds.view(-1, 4)[fg_masks], reg_targets)
+            self.iou_loss(bbox_preds.view(-1, 4)[fg_masks], reg_targets) # bbox_preds : [batch, 10710, 4] -> [batch*10714, 4] -> fgmask -> [num_fg, 4]
         ).sum() / num_fg
         loss_obj = (
-            self.bcewithlog_loss(obj_preds.view(-1, 1), obj_targets)
+            self.bcewithlog_loss(obj_preds.view(-1, 1), obj_targets) # obj_preds : [batch, 10710, 1] -> [batch*10710, 1]
         ).sum() / num_fg
         loss_cls = (
             self.bcewithlog_loss(
-                cls_preds.view(-1, self.num_classes)[fg_masks], cls_targets
+                cls_preds.view(-1, self.num_classes)[fg_masks], cls_targets # cls_preds : [batch, 10710, 11] -> [batch*10710, 11] -> fgmask -> [num_fg, 11]
             )
         ).sum() / num_fg
         if self.use_l1:
