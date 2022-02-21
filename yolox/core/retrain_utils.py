@@ -9,6 +9,7 @@ from loguru import logger
 class RetrainUtils(nn.Module):
     def __init__(self):
         super().__init__()
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.xin_type = torch.FloatTensor
         self.hw = [[68, 120], [34, 60], [17, 30]] # self.hw * strides = [960, 544]
         self.strides = [8, 16, 32]
@@ -18,7 +19,7 @@ class RetrainUtils(nn.Module):
         self.l1_loss = nn.L1Loss(reduction="none")
         self.bcewithlog_loss = nn.BCEWithLogitsLoss(reduction="none")
         self.iou_loss = IOUloss(reduction="none")
-        self.grids = [torch.zeros(1)] * len(self.in_channels)
+        self.grids = [torch.zeros(1).to(self.device)] * len(self.in_channels)
         self.num_classes = 11
 
         self.use_l1 = False
@@ -67,10 +68,11 @@ class RetrainUtils(nn.Module):
             yv, xv = torch.meshgrid([torch.arange(hsize), torch.arange(wsize)], indexing=None)
             grid = torch.stack((xv, yv), 2).view(1, 1, hsize, wsize, 2).type(dtype) # [ [ [ [[0, 0], [1, 0], [2,0] ...], [ [0, 1], [1, 1]... ] ] ] ]
             self.grids[k] = grid # [1, 1, 68, 120, 2]
-        grid = grid.view(1, -1, 2) # grid : [1, 1*68*120, 2]
+        grid = grid.view(1, -1, 2).to(self.device) # grid : [1, 1*68*120, 2]
         # True, False -> Error
         # False, False -> OK
         # 기존 yolox-s 는 True, False
+        # print(f"output : {output.get_device()}, grid : {grid.get_device()}, device : {self.device}")
         output[..., :2] = (output[..., :2] + grid) * stride # stride = 8
         # print(f"type : {output[..., 2:4].type()}, output : {output[..., 2:4]}")
         output[..., 2:4] = torch.exp(output[..., 2:4].type(self.xin_type)) * stride
@@ -209,7 +211,9 @@ class RetrainUtils(nn.Module):
         total_num_anchors,
         num_gt,
     ):
-        expanded_strides_per_image = expanded_strides[0]
+        gt_bboxes_per_image = gt_bboxes_per_image.to(self.device)
+        expanded_strides_per_image = expanded_strides[0].to(self.device)
+        # print(f"stride : {expanded_strides_per_image.get_device()}, x_shifts[0] : {x_shifts[0].get_device()}")
         x_shifts_per_image = x_shifts[0] * expanded_strides_per_image
         y_shifts_per_image = y_shifts[0]  * expanded_strides_per_image
         
@@ -247,6 +251,7 @@ class RetrainUtils(nn.Module):
 
         # 각 grid의 center로 부터 거리인듯? -> 각 object와 각 grid의 center 간의 거리 [num_fg, num_anchors]
         # print(f"x_centers_per_image : {x_centers_per_image.size()}, gt_bboxes_per_image_l : {gt_bboxes_per_image_l.size()}")
+        # print(f"x_centers : {x_centers_per_image.get_device()}, gt_bboxes : {gt_bboxes_per_image.get_device()}")
         b_l = x_centers_per_image - gt_bboxes_per_image_l 
         b_r = gt_bboxes_per_image_r - x_centers_per_image 
         b_t = y_centers_per_image - gt_bboxes_per_image_t
@@ -288,7 +293,7 @@ class RetrainUtils(nn.Module):
         return is_in_boxes_anchor, is_in_boxes_and_center
     
     def forward(self, preds, labels):
-        preds = preds.to("cpu")
+        preds = preds
         # splited = self.split_output(preds)
         x_shifts, y_shifts, expanded_strides, outputs, origin_preds, dtype = self.get_outputs_for_train(preds)
         self.get_losses(x_shifts, y_shifts, expanded_strides, labels, outputs, origin_preds, dtype)
@@ -296,8 +301,9 @@ class RetrainUtils(nn.Module):
         
 
 if __name__ == "__main__":
-    model = torch.load("/workspace/pruning/YOLOX/compressed_models/tiny_compressed.pt")
-    dummy_input = torch.randn(16, 3, 544, 960)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = torch.load("/workspace/pruning/YOLOX/compressed_models/tiny_compressed.pt").to(device)
+    dummy_input = torch.randn(16, 3, 544, 960).to(device)
     preds = model(dummy_input)
     # preds.requires_grad = True
     labels = torch.randn(16, 120, 5)
