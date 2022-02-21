@@ -11,7 +11,8 @@ import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 import wandb
-
+import sys
+sys.path.append("/workspace/pruning/netspresso-compression-toolkit")
 from yolox.data import DataPrefetcher
 from yolox.utils import (
     MeterBuffer,
@@ -29,7 +30,7 @@ from yolox.utils import (
     setup_logger,
     synchronize
 )
-
+from .retrain_utils import RetrainUtils
 
 class Trainer:
     def __init__(self, exp, args):
@@ -93,24 +94,37 @@ class Trainer:
         iter_start_time = time.time()
 
         inps, targets = self.prefetcher.next()
-        inps = inps.to(self.data_type)
+        # inps = inps.to(self.data_type)
+        inps = inps.float()
+        # print(f"data_type : {self.data_type}")
         targets = targets.to(self.data_type)
         targets.requires_grad = False
-        inps, targets = self.exp.preprocess(inps, targets, self.input_size)
+        inps, targets = self.exp.preprocess(inps, targets, self.input_size) # scaling 작업
         data_end_time = time.time()
 
-        with torch.cuda.amp.autocast(enabled=self.amp_training):
-            outputs = self.model(inps, targets)
-
+        # with torch.cuda.amp.autocast(enabled=self.amp_training):
+        #     outputs = self.model(inps, targets)
+        preds = self.model(inps) # [batch, 10710, 16]
+        print(f"preds : {preds.size()}")
+        # print(f"preds : {preds.size()}")
+        criteria = RetrainUtils(self.data_type)
+        outputs = criteria(preds, targets, inps)
         loss = outputs["total_loss"]
+        # for key, val in outputs.items():
+        #     if key == "num_fg" or key == "l1_loss":
+        #         continue
+        #     print(f"{key} : {val.type()}")
+        #     print(f"{key} : {val}")
         wandb.log({"loss": loss}, step=self.epoch+1)
         #"total_loss", "iou_loss", "l1_loss", "conf_loss", "cls_loss", "num_fg"
 
 
         self.optimizer.zero_grad()
-        self.scaler.scale(loss).backward()
-        self.scaler.step(self.optimizer)
-        self.scaler.update()
+        loss.backward()
+        self.optimizer.step()
+        # self.scaler.scale(loss).backward()
+        # self.scaler.step(self.optimizer)
+        # self.scaler.update()
 
         if self.use_model_ema:
             self.ema_model.update(self.model)
@@ -134,12 +148,11 @@ class Trainer:
         # model related init
         torch.cuda.set_device(self.local_rank)
         # model = self.exp.get_model()
-        # logger.info(
-        #     "Model Summary: {}".format(get_model_info(model, self.exp.test_size))
-        # )
-        model = torch.load("/workspace/tiny/YOLOX/tiny_compressed.pt")
+        model = torch.load("/workspace/pruning/YOLOX/compressed_models/tiny_compressed.pt")
+        logger.info(
+            "Model Summary: {}".format(get_model_info(model, self.exp.test_size))
+        )
         model.to(self.device)
-
         # solver related init
         self.optimizer = self.exp.get_optimizer(self.args.batch_size)
 
