@@ -39,6 +39,7 @@ class Trainer:
         self.exp = exp
         self.args = args
 
+        self.criteria = RetrainUtils(self.data_type)
         # training related attr
         self.max_epoch = exp.max_epoch
         self.amp_training = args.fp16
@@ -47,7 +48,7 @@ class Trainer:
         self.rank = get_rank()
         self.local_rank = get_local_rank()
         self.device = "cuda:{}".format(self.local_rank)
-        self.use_model_ema = exp.ema
+        self.use_model_ema = exp.ema # True
 
         # data/dataloader related attr
         self.data_type = torch.float16 if args.fp16 else torch.float32
@@ -105,10 +106,10 @@ class Trainer:
         # with torch.cuda.amp.autocast(enabled=self.amp_training):
         #     outputs = self.model(inps, targets)
         preds = self.model(inps) # [batch, 10710, 16]
-        print(f"preds : {preds.size()}")
         # print(f"preds : {preds.size()}")
-        criteria = RetrainUtils(self.data_type)
-        outputs = criteria(preds, targets, inps)
+        # print(f"preds : {preds.size()}")
+        # criteria = RetrainUtils(self.data_type)
+        outputs = self.criteria(preds, targets, inps)
         loss = outputs["total_loss"]
         # for key, val in outputs.items():
         #     if key == "num_fg" or key == "l1_loss":
@@ -211,9 +212,11 @@ class Trainer:
             self.train_loader.close_mosaic()
             logger.info("--->Add additional L1 loss now!")
             if self.is_distributed:
-                self.model.module.head.use_l1 = True
+                self.criteria.use_l1 = True
+                # self.model.module.head.use_l1 = True
             else:
-                self.model.head.use_l1 = True
+                self.criteria.use_l1 = True
+                # self.model.head.use_l1 = True
             self.exp.eval_interval = 1
             if not self.no_aug:
                 self.save_ckpt(ckpt_name="last_mosaic_epoch")
@@ -335,7 +338,8 @@ class Trainer:
 
     def save_ckpt(self, ckpt_name, update_best_ckpt=False):
         if self.rank == 0:
-            save_model = self.ema_model.ema if self.use_model_ema else self.model
+            # save_model = self.ema_model.ema if self.use_model_ema else self.model
+            save_model = self.model
             logger.info("Save weights to {}".format(self.file_name))
             ckpt_state = {
                 "start_epoch": self.epoch + 1,
