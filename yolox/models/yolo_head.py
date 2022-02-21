@@ -14,7 +14,6 @@ from yolox.utils import bboxes_iou
 from .losses import IOUloss
 from .network_blocks import BaseConv, DWConv
 
-
 class YOLOXHead(nn.Module):
     def __init__(
         self,
@@ -31,7 +30,7 @@ class YOLOXHead(nn.Module):
             depthwise (bool): whether apply depthwise conv in conv branch. Defalut value: False.
         """
         super().__init__()
-
+        self.compress_mode = False
         self.n_anchors = 1
         self.num_classes = num_classes
         self.decode_in_inference = True  # for deploy, set to False
@@ -160,7 +159,6 @@ class YOLOXHead(nn.Module):
             reg_feat = reg_conv(reg_x) # reg_conv : 256 -> 256 (channel)
             reg_output = self.reg_preds[k](reg_feat) # reg_preds : 256 -> 4 (channel)
             obj_output = self.obj_preds[k](reg_feat) # obj_preds : 256 -> n_anchor * 1 (channel)
-
              # outputs : [tensor([batch, 16, 68, 120]), tensor([batch, 16, 34, 60]), tensor([batch, 16, 17, 30])]
             if self.training:
                 output = torch.cat([reg_output, obj_output, cls_output], 1) # [batch, 16, 68, 120]
@@ -186,9 +184,12 @@ class YOLOXHead(nn.Module):
                     origin_preds.append(reg_output.clone())
 
             else:
-                # print(f"reg : {reg_output.size()}, obj : {obj_output.size()} cls : {cls_output.size()}")
+                # output = torch.cat(
+                #     [reg_output, obj_output.sigmoid(), cls_output.sigmoid()], 1
+                # )
+                print(f"Training_mode is False")
                 output = torch.cat(
-                    [reg_output, obj_output.sigmoid(), cls_output.sigmoid()], 1
+                   [reg_output, obj_output, cls_output], 1
                 )
             # 다른점 : training시에는 get_output_and_grid함수에서 output의 (x, y, w, h) 에 grid값을 더해주고 stride값을 곱해주지만
             # eval모드에서는 그렇지 않고 obj_output과 cls_output에 sigmoid를 해준다.
@@ -241,7 +242,7 @@ class YOLOXHead(nn.Module):
 
         # output : [batch, 16, 68, 120]
         batch_size = output.shape[0]
-        n_ch = 5 + self.num_classes # [x, y, width, height, confidence, classes] ?
+        n_ch = 5 + self.num_classes # [center_x, center_y, width, height, confidence, classes] ?
         hsize, wsize = output.shape[-2:] # [68, 120]
         if grid.shape[2:4] != output.shape[2:4]:
             yv, xv = torch.meshgrid([torch.arange(hsize), torch.arange(wsize)]) 
@@ -253,6 +254,9 @@ class YOLOXHead(nn.Module):
             batch_size, self.n_anchors * hsize * wsize, -1
         ) # output : [batch, 1, 16, 68, 120] -> [batch, 1, 68, 120, 16] -> [batch, 1*68*120, 16]
         grid = grid.view(1, -1, 2) # grid : [1, 1*68*120, 2]
+        # print(f"output_grad : {output.requires_grad}, grid_grad : {grid.requires_grad},")
+        # print(f"output : {output.get_device()}, grid : {grid.get_device()}")
+        # True, False
         output[..., :2] = (output[..., :2] + grid) * stride # stride = 8
         output[..., 2:4] = torch.exp(output[..., 2:4]) * stride
         return output, grid # output : [batch, 1*68*120, 16], grid : [1, 1*68*120, 2]
@@ -663,7 +667,7 @@ class YOLOXHead(nn.Module):
         # pair_wise_ious -> 각 gt와 각 preds에 대한 iou loss -> iou가 0에 가까울수록 크고, iou가 1에 가까울수록 작다.
         ious_in_boxes_matrix = pair_wise_ious # [num_gt, fg_num]
         n_candidate_k = min(10, ious_in_boxes_matrix.size(1))
-        topk_ious, _ = torch.topk(ious_in_boxes_matrix, n_candidate_k, dim=1) # [num_gt, n_candidate_k] -> iou가 0에 가까운 애들 뽑기
+        topk_ious, _ = torch.topk(ious_in_boxes_matrix, n_candidate_k, dim=1) # [num_gt, n_candidate_k] -> iou가 1에 가까운 k개 애들 뽑기
         dynamic_ks = torch.clamp(topk_ious.sum(1).int(), min=1) # [num_gt]
         dynamic_ks = dynamic_ks.tolist() # len == num_gt 짜리 int list -> 제일 작은값은 1보다 크거나 같다.
         for gt_idx in range(num_gt):
