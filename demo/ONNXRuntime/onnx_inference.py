@@ -70,6 +70,7 @@ if __name__ == '__main__':
 
     ort_inputs = {session.get_inputs()[0].name: img[None, :, :, :]}
     output = session.run(None, ort_inputs)
+    # print(f"output[0] : {len(output[0])}, {len(output[0][0])}, {len(output[0][0][0])}")
     predictions = demo_postprocess(output[0], input_shape, p6=args.with_p6)[0]
 
     boxes = predictions[:, :4]

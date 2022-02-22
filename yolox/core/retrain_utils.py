@@ -312,7 +312,7 @@ class RetrainUtils(nn.Module):
         #     bboxes_preds_per_image = bboxes_preds_per_image.cpu()
         # print(f"gt_bboxes : {gt_bboxes_per_image.type()}, preds_bboxes : {bboxes_preds_per_image.type()}") # FloatTensor, FloatTensor
         pair_wise_ious = bboxes_iou(gt_bboxes_per_image, bboxes_preds_per_image, False)
-        
+
         gt_cls_per_image = (
             F.one_hot(gt_classes.to(torch.int64), self.num_classes)
             .float()
@@ -329,15 +329,16 @@ class RetrainUtils(nn.Module):
         # with torch.cuda.amp.autocast(enabled=False):
             # cls_preds : [fg_num, 11]
             # obj_preds : [fg_num, 1]
-        cls_preds_ = (
-            cls_preds_.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid_()
-            * obj_preds_.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid_()
-        )
-            # cls_preds_ : [num_gt, fg_num, 11]
-            # gt_cls_per_image : [num_gt, fg_num. 11]
-        pair_wise_cls_loss = F.binary_cross_entropy(
-            cls_preds_.sqrt_(), gt_cls_per_image, reduction="none"
-        ).sum(-1)
+        with torch.cuda.amp.autocast(enabled=False):
+            cls_preds_ = (
+                cls_preds_.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid_()
+                * obj_preds_.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid_()
+            )
+                # cls_preds_ : [num_gt, fg_num, 11]
+                # gt_cls_per_image : [num_gt, fg_num. 11]
+            pair_wise_cls_loss = F.binary_cross_entropy(
+                cls_preds_.sqrt_(), gt_cls_per_image, reduction="none"
+            ).sum(-1)
         del cls_preds_
 
         cost = (

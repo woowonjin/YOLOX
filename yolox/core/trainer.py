@@ -104,22 +104,18 @@ class Trainer:
         inps, targets = self.exp.preprocess(inps, targets, self.input_size) # scaling 작업
         data_end_time = time.time()
 
-        # with torch.cuda.amp.autocast(enabled=self.amp_training):
+        with torch.cuda.amp.autocast(enabled=self.amp_training):
         #     outputs = self.model(inps, targets)
-        preds = self.model(inps) # [batch, 10710, 16]
-        # print(f"preds : {preds.size()}")
-        # print(f"preds : {preds.size()}")
-        # criteria = RetrainUtils(self.data_type)
-        outputs = self.criteria(preds, targets, inps)
+            preds = self.model(inps)
+            outputs = self.criteria(preds, targets, inps)
         loss = outputs["total_loss"]
         # for key, val in outputs.items():
         #     if key == "num_fg" or key == "l1_loss":
         #         continue
-        #     print(f"{key} : {val.type()}")
+        #     # print(f"{key} : {val.type()}")
         #     print(f"{key} : {val}")
         wandb.log({"loss": loss}, step=self.epoch+1)
         #"total_loss", "iou_loss", "l1_loss", "conf_loss", "cls_loss", "num_fg"
-
 
         self.optimizer.zero_grad()
         loss.backward()
