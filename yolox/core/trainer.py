@@ -71,7 +71,7 @@ class Trainer:
         )
 
     def train(self):
-        wandb.init(entity="woowonjin", project="Nota-yolox", name=self.args.run_name, config=self.args)
+        wandb.init(entity="woowonjin", project="Nota-yolox", config=self.args, group=self.args.run_name)
         self.before_train()
         try:
             self.train_in_epoch()
