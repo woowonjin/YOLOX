@@ -39,7 +39,6 @@ class Trainer:
         self.exp = exp
         self.args = args
 
-        self.criteria = RetrainUtils(self.data_type)
         # training related attr
         self.max_epoch = exp.max_epoch
         self.amp_training = args.fp16
@@ -54,6 +53,8 @@ class Trainer:
         self.data_type = torch.float16 if args.fp16 else torch.float32
         self.input_size = exp.input_size
         self.best_ap = 0
+
+        self.criteria = RetrainUtils(self.data_type)
 
         # metric record
         self.meter = MeterBuffer(window_size=exp.print_interval)
