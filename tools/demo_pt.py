@@ -10,7 +10,7 @@ import numpy as np
 
 import onnxruntime
 import sys
-sys.path.append("/workspace/pruning/netspresso-compression-toolkit")
+sys.path.append("/workspace/retrain_tiny/netspresso-compression-toolkit")
 from yolox.data.data_augment import preproc as preprocess
 from yolox.data.datasets import COCO_CLASSES
 from yolox.utils import mkdir, multiclass_nms, demo_postprocess, vis

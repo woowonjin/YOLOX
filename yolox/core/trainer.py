@@ -12,7 +12,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 import wandb
 import sys
-sys.path.append("/workspace/pruning/netspresso-compression-toolkit")
+sys.path.append("/workspace/retrain_tiny/netspresso-compression-toolkit")
 from yolox.data import DataPrefetcher
 from yolox.utils import (
     MeterBuffer,
@@ -146,7 +146,7 @@ class Trainer:
         # model related init
         torch.cuda.set_device(self.local_rank)
         # model = self.exp.get_model()
-        model = torch.load("/workspace/pruning/YOLOX/compressed_models/tiny_compressed.pt")
+        model = torch.load("/workspace/retrain_tiny/YOLOX/compressed_models/tiny_compressed.pt")
         logger.info(
             "Model Summary: {}".format(get_model_info(model, self.exp.test_size))
         )

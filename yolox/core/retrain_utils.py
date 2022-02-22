@@ -1,6 +1,6 @@
 import sys
-sys.path.append("/workspace/pruning/YOLOX")
-sys.path.append("/workspace/pruning/netspresso-compression-toolkit")
+sys.path.append("/workspace/retrain_tiny/YOLOX")
+sys.path.append("/workspace/retrain_tiny/netspresso-compression-toolkit")
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -522,7 +522,7 @@ class RetrainUtils(nn.Module):
 
 if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = torch.load("/workspace/pruning/YOLOX/compressed_models/tiny_compressed.pt").to(device)
+    model = torch.load("/workspace/retrain_tiny/YOLOX/compressed_models/tiny_compressed.pt").to(device)
     dummy_input = torch.randn(16, 3, 544, 960).to(device)
     preds = model(dummy_input)
     # preds.requires_grad = True
