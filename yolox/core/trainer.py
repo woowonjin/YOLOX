@@ -96,8 +96,8 @@ class Trainer:
         iter_start_time = time.time()
 
         inps, targets = self.prefetcher.next()
-        # inps = inps.to(self.data_type)
-        inps = inps.float()
+        inps = inps.to(self.data_type)
+        # inps = inps.float()
         # print(f"data_type : {self.data_type}")
         targets = targets.to(self.data_type)
         targets.requires_grad = False

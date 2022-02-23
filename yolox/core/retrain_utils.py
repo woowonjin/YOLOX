@@ -14,8 +14,8 @@ class RetrainUtils(nn.Module):
     def __init__(self, dtype=torch.float16):
         super().__init__()
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        # self.xin_type = dtype
-        self.xin_type = torch.FloatTensor
+        self.xin_type = dtype
+        # self.xin_type = torch.FloatTensor
         self.hw = [[68, 120], [34, 60], [17, 30]] # self.hw * strides = [960, 544]
         self.default_input_size = [544, 960]
         self.strides = [8, 16, 32]
