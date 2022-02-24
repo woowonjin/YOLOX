@@ -6,6 +6,7 @@ import datetime
 import os
 import time
 from loguru import logger
+import copy
 
 import torch
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -33,12 +34,12 @@ from yolox.utils import (
 from .retrain_utils import RetrainUtils
 
 class Trainer:
-    def __init__(self, exp, args):
+    def __init__(self, exp, args, mode="train"):
         # init function only defines some basic attr, other attrs like model, optimizer are built in
         # before_train methods.
         self.exp = exp
         self.args = args
-
+        self.mode = mode
         # training related attr
         self.max_epoch = exp.max_epoch
         self.amp_training = args.fp16
@@ -70,9 +71,82 @@ class Trainer:
             mode="a",
         )
 
-    def train(self):
-        wandb.init(entity="woowonjin", project="Nota-yolox", config=self.args, group=self.args.run_name)
+    def finetune_lr(self):
         self.before_train()
+        # wandb.init(entity="woowonjin", project="Nota-yolox", config=self.args, group=self.args.run_name)
+        print("="*100)
+        print("in finetune_lr function!!")
+        print("="*100)
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        default_model = copy.deepcopy(self.model)
+        default_model.eval()
+        after_tune_acc = 0
+        acceptable_deterioration = 0.01
+        criterion = copy.deepcopy(self.criteria)
+        optimizer = copy.deepcopy(self.optimizer)
+        scheduler = copy.deepcopy(self.lr_scheduler)
+        # b4fine_tune_acc, _ = test(args, _model, test_loader)
+        print("="*100)
+        print("first Evaluation Start for calculating b4fine_tune_acc")
+        print("="*100)
+        ap50_95, b4fine_tune_acc, summary = self.exp.eval(
+            default_model, self.evaluator, self.is_distributed
+        )
+        print("="*100)
+        print("End Evaluation Start for calculating b4fine_tune_acc")
+        print("="*100)
+        b4fine_tune_acc = b4fine_tune_acc - acceptable_deterioration
+        print(f"b4fine_tune_acc : {b4fine_tune_acc}")
+        while (after_tune_acc < (b4fine_tune_acc)):
+            print(f"new_lr : {self.exp.basic_lr_per_img}")
+            self.model = copy.deepcopy(default_model).to(device)
+            # criterion = self.criteria
+            # optimizer = self.optimizer
+            # scheduler = self.lr_scheduler
+            self.train_in_epoch()
+            _, after_tune_acc, summary = self.exp.eval(
+                self.model, self.evaluator, self.is_distributed
+            )
+            if (after_tune_acc < b4fine_tune_acc):
+                print("="*100)
+                print("Learning Rate is updated !!")
+                print(f"before : {b4fine_tune_acc}, after : {after_tune_acc}")
+                print("="*100)
+                self.exp.basic_lr_per_img = self.exp.basic_lr_per_img/10
+            # elif after_tune_acc==0.01 and b4fine_tune_acc==0.01:
+            #     return args.lr_list[-1]
+            else:
+                print("="*100)
+                print(f"this lr is ok, lr : {self.exp.basic_lr_per_img}")
+                print(f"before : {b4fine_tune_acc}, after : {after_tune_acc}")
+                print("="*100)
+                self.criteria = criterion
+                self.optimizer = optimizer
+                self.lr_scheduler = scheduler
+                self.model = copy.deepcopy(default_model)
+                self.mode = "train"
+                return ap50_95, b4fine_tune_acc, self.exp.basic_lr_per_img
+        print("="*100)
+        print(f"this lr is ok, lr : {self.exp.basic_lr_per_img}")
+        print(f"before : {b4fine_tune_acc}, after : {after_tune_acc}")
+        print("="*100)
+        self.criteria = criterion
+        self.optimizer = optimizer
+        self.lr_scheduler = scheduler
+        self.model = copy.deepcopy(default_model)
+        self.mode = "train"
+        return ap50_95, b4fine_tune_acc, self.exp.basic_lr_per_img
+
+    def train(self):
+        wandb.init(entity="woowonjin", project="Nota-yolox", name=self.args.run_name, config=self.args) # group=self.args.run_name)
+        if self.mode == "optimize_lr":
+            ap50_95, ap50, finetuned_lr = self.finetune_lr()
+            wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=0)
+            print("="*100)
+            print("finetune_lr finished !!")
+            print("="*100)
+        else:
+            self.before_train()
         try:
             self.train_in_epoch()
         except Exception:
@@ -83,7 +157,10 @@ class Trainer:
     def train_in_epoch(self):
         for self.epoch in range(self.start_epoch, self.max_epoch):
             self.before_epoch()
+            self.model.train()
             self.train_in_iter()
+            if self.mode == "optimize_lr":
+                break
             self.after_epoch()
 
     def train_in_iter(self):
@@ -93,8 +170,8 @@ class Trainer:
             self.after_iter()
 
     def train_one_iter(self):
+        # print(f"train one iter start!!")
         iter_start_time = time.time()
-
         inps, targets = self.prefetcher.next()
         inps = inps.to(self.data_type)
         # inps = inps.float()
@@ -114,15 +191,16 @@ class Trainer:
         #         continue
         #     # print(f"{key} : {val.type()}")
         #     print(f"{key} : {val}")
-        wandb.log({"loss": loss}, step=self.epoch+1)
+        if self.mode == "train":
+            wandb.log({"loss": loss}, step=self.epoch+1)
         #"total_loss", "iou_loss", "l1_loss", "conf_loss", "cls_loss", "num_fg"
 
         self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-        # self.scaler.scale(loss).backward()
-        # self.scaler.step(self.optimizer)
-        # self.scaler.update()
+        # loss.backward()
+        # self.optimizer.step()
+        self.scaler.scale(loss).backward()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
 
         if self.use_model_ema:
             self.ema_model.update(self.model)
@@ -327,8 +405,8 @@ class Trainer:
             self.tblogger.add_scalar("val/COCOAP50_95", ap50_95, self.epoch + 1)
             logger.info("\n" + summary)
         synchronize()
-
-        wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=self.epoch+1)
+        if self.mode == "train":
+            wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=self.epoch+1)
 
         self.save_ckpt("last_epoch", ap50_95 > self.best_ap)
         self.best_ap = max(self.best_ap, ap50_95)
