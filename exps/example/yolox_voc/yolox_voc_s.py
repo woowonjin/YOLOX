@@ -22,7 +22,7 @@ class Exp(MyExp):
         self.mixup_prob = 1.0
         self.hsv_prob = 1.0
         self.flip_prob = 0.5
-        self.eval_interval = 5
+        self.eval_interval = 1
 
         self.exp_name = os.path.split(os.path.realpath(__file__))[1].split(".")[0]
         self.model = torch.load("/workspace/retrain_small/YOLOX/compressed_models/small_compressed.pt")

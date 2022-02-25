@@ -15,7 +15,7 @@ class Exp(MyExp):
         self.num_classes = 11
         self.depth = 0.67
         self.width = 0.75
-        self.eval_interval = 5
+        self.eval_interval = 1
 
         self.exp_name = os.path.split(os.path.realpath(__file__))[1].split(".")[0]
         self.model = torch.load("/workspace/retrain_medium/YOLOX/compressed_models/medium_compressed.pt")
