@@ -10,7 +10,8 @@ from loguru import logger
 import torch
 import torch.backends.cudnn as cudnn
 import wandb
-
+import sys
+sys.path.append("/workspace/retrain_small/YOLOX")
 from yolox.core import Trainer, launch
 from yolox.exp import get_exp
 from yolox.utils import configure_nccl, configure_omp, get_num_devices
@@ -35,6 +36,11 @@ def make_parser():
     parser.add_argument(
         "-d", "--devices", default=None, type=int, help="device for training"
     )
+
+    parser.add_argument(
+        "--lr_ratio", default=0, type=int, help="learning_rate_ratio"
+    )
+
     parser.add_argument(
         "-f",
         "--exp_file",

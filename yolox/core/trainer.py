@@ -13,7 +13,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 import wandb
 import sys
-sys.path.append("/workspace/retrain_tiny/netspresso-compression-toolkit")
+sys.path.append("/workspace/retrain_small/netspresso-compression-toolkit")
 from yolox.data import DataPrefetcher
 from yolox.utils import (
     MeterBuffer,
@@ -97,7 +97,7 @@ class Trainer:
         print("="*100)
         b4fine_tune_acc = b4fine_tune_acc - acceptable_deterioration
         print(f"b4fine_tune_acc : {b4fine_tune_acc}")
-        while (after_tune_acc < (b4fine_tune_acc)):
+        while (after_tune_acc < (:b4fine_tune_acc)):
             print(f"new_lr : {self.exp.basic_lr_per_img}")
             self.model = copy.deepcopy(default_model).to(device)
             # criterion = self.criteria
@@ -108,11 +108,17 @@ class Trainer:
                 self.model, self.evaluator, self.is_distributed
             )
             if (after_tune_acc < b4fine_tune_acc):
+                self.exp.basic_lr_per_img = self.exp.basic_lr_per_img/10
                 print("="*100)
-                print("Learning Rate is updated !!")
+                print(f"Learning Rate is updated to {self.exp.basic_lr_per_img}!!")
                 print(f"before : {b4fine_tune_acc}, after : {after_tune_acc}")
                 print("="*100)
-                self.exp.basic_lr_per_img = self.exp.basic_lr_per_img/10
+                self.lr_scheduler = self.exp.get_lr_scheduler(
+                    self.exp.basic_lr_per_img * self.args.batch_size, self.max_iter
+                )
+                self.criteria = criterion
+                self.optimizer = optimizer
+                scheduler = copy.deepcopy(self.lr_scheduler)
             # elif after_tune_acc==0.01 and b4fine_tune_acc==0.01:
             #     return args.lr_list[-1]
             else:
@@ -147,6 +153,17 @@ class Trainer:
             print("="*100)
         else:
             self.before_train()
+            ap50_95, ap50, summary = self.exp.eval(
+                self.model, self.evaluator, self.is_distributed
+            )
+            wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=0)
+
+        if torch.cuda.is_available():
+            print("="*100)
+            print("cuda empty cache !!!")
+            print("="*100)
+            torch.cuda.empty_cache()
+
         try:
             self.train_in_epoch()
         except Exception:
@@ -224,7 +241,7 @@ class Trainer:
         # model related init
         torch.cuda.set_device(self.local_rank)
         # model = self.exp.get_model()
-        model = torch.load("/workspace/retrain_tiny/YOLOX/compressed_models/tiny_compressed.pt")
+        model = torch.load("/workspace/retrain_small/YOLOX/compressed_models/small_compressed.pt")
         logger.info(
             "Model Summary: {}".format(get_model_info(model, self.exp.test_size))
         )
@@ -249,7 +266,7 @@ class Trainer:
         self.max_iter = len(self.train_loader)
 
         self.lr_scheduler = self.exp.get_lr_scheduler(
-            self.exp.basic_lr_per_img * self.args.batch_size, self.max_iter
+            self.exp.basic_lr_per_img * self.args.batch_size / (10**self.args.lr_ratio), self.max_iter
         )
         if self.args.occupy:
             occupy_mem(self.local_rank)
