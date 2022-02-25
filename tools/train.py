@@ -119,7 +119,10 @@ def main(exp, args):
     cudnn.benchmark = True
 
     wandb.login()
-    trainer = Trainer(exp, args, mode="optimize_lr")
+    if args.optimize_lr:
+        trainer = Trainer(exp, args, mode="optimize_lr")
+    else:
+        trainer = Trainer(exp, args)
     # if args.optimize_lr:
     #     finetuned_lr = trainer.finetune_lr()
     #     trainer.exp.basic_lr_per_img = finetuned_lr

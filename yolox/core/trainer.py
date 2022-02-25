@@ -39,6 +39,8 @@ class Trainer:
         # before_train methods.
         self.exp = exp
         self.args = args
+        self.exp.basic_lr_per_img /= (10**self.args.lr_ratio)
+        self.previous_lr = self.exp.basic_lr_per_img
         self.mode = mode
         # training related attr
         self.max_epoch = exp.max_epoch
@@ -97,7 +99,7 @@ class Trainer:
         print("="*100)
         b4fine_tune_acc = b4fine_tune_acc - acceptable_deterioration
         print(f"b4fine_tune_acc : {b4fine_tune_acc}")
-        while (after_tune_acc < (:b4fine_tune_acc)):
+        while (after_tune_acc < (b4fine_tune_acc)):
             print(f"new_lr : {self.exp.basic_lr_per_img}")
             self.model = copy.deepcopy(default_model).to(device)
             # criterion = self.criteria
@@ -146,12 +148,18 @@ class Trainer:
     def train(self):
         wandb.init(entity="woowonjin", project="Nota-yolox", name=self.args.run_name, config=self.args) # group=self.args.run_name)
         if self.mode == "optimize_lr":
+            print("="*100)
+            print("optimize_lr mode is True")
+            print("="*100)
             ap50_95, ap50, finetuned_lr = self.finetune_lr()
             wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=0)
             print("="*100)
             print("finetune_lr finished !!")
             print("="*100)
         else:
+            print("="*100)
+            print("optimize_lr mode is False")
+            print("="*100)
             self.before_train()
             ap50_95, ap50, summary = self.exp.eval(
                 self.model, self.evaluator, self.is_distributed
@@ -208,8 +216,6 @@ class Trainer:
         #         continue
         #     # print(f"{key} : {val.type()}")
         #     print(f"{key} : {val}")
-        if self.mode == "train":
-            wandb.log({"loss": loss}, step=self.epoch+1)
         #"total_loss", "iou_loss", "l1_loss", "conf_loss", "cls_loss", "num_fg"
 
         self.optimizer.zero_grad()
@@ -223,6 +229,7 @@ class Trainer:
             self.ema_model.update(self.model)
 
         lr = self.lr_scheduler.update_lr(self.progress_in_iter + 1)
+        self.previous_lr = lr
         for param_group in self.optimizer.param_groups:
             param_group["lr"] = lr
 
@@ -266,7 +273,7 @@ class Trainer:
         self.max_iter = len(self.train_loader)
 
         self.lr_scheduler = self.exp.get_lr_scheduler(
-            self.exp.basic_lr_per_img * self.args.batch_size / (10**self.args.lr_ratio), self.max_iter
+            self.exp.basic_lr_per_img * self.args.batch_size, self.max_iter
         )
         if self.args.occupy:
             occupy_mem(self.local_rank)
@@ -309,7 +316,7 @@ class Trainer:
             else:
                 self.criteria.use_l1 = True
                 # self.model.head.use_l1 = True
-            self.exp.eval_interval = 1
+            # self.exp.eval_interval = 1
             if not self.no_aug:
                 self.save_ckpt(ckpt_name="last_mosaic_epoch")
 
@@ -348,7 +355,8 @@ class Trainer:
             time_str = ", ".join(
                 ["{}: {:.3f}s".format(k, v.avg) for k, v in time_meter.items()]
             )
-
+            if self.mode == "train":
+                wandb.log({"loss": loss_meter["total_loss"].latest, "learning_rate": self.meter["lr"].latest}, step=self.epoch*self.max_iter + self.iter+1)
             logger.info(
                 "{}, mem: {:.0f}Mb, {}, {}, lr: {:.3e}".format(
                     progress_str,
