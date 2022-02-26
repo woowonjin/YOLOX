@@ -13,7 +13,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 import wandb
 import sys
-sys.path.append("/workspace/retrain_small/netspresso-compression-toolkit")
+sys.path.append("/workspace/retrain_tiny/netspresso-compression-toolkit")
 from yolox.data import DataPrefetcher
 from yolox.utils import (
     MeterBuffer,
@@ -166,6 +166,10 @@ class Trainer:
             )
             wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=0)
 
+        print("="*100)
+        print(f"Learning Rate : {self.exp.basic_lr_per_img}")
+        print("="*100)
+
         if torch.cuda.is_available():
             print("="*100)
             print("cuda empty cache !!!")
@@ -217,7 +221,8 @@ class Trainer:
         #     # print(f"{key} : {val.type()}")
         #     print(f"{key} : {val}")
         #"total_loss", "iou_loss", "l1_loss", "conf_loss", "cls_loss", "num_fg"
-
+        if self.mode == "train":
+            wandb.log({"loss": loss}, step=self.epoch+1)
         self.optimizer.zero_grad()
         # loss.backward()
         # self.optimizer.step()
@@ -248,7 +253,7 @@ class Trainer:
         # model related init
         torch.cuda.set_device(self.local_rank)
         # model = self.exp.get_model()
-        model = torch.load("/workspace/retrain_small/YOLOX/compressed_models/small_compressed.pt")
+        model = torch.load("/workspace/retrain_tiny/YOLOX/compressed_models/tiny_compressed.pt")
         logger.info(
             "Model Summary: {}".format(get_model_info(model, self.exp.test_size))
         )
@@ -355,8 +360,8 @@ class Trainer:
             time_str = ", ".join(
                 ["{}: {:.3f}s".format(k, v.avg) for k, v in time_meter.items()]
             )
-            if self.mode == "train":
-                wandb.log({"loss": loss_meter["total_loss"].latest, "learning_rate": self.meter["lr"].latest}, step=self.epoch*self.max_iter + self.iter+1)
+            # if self.mode == "train":
+                # wandb.log({"loss": loss_meter["total_loss"].latest, "learning_rate": self.meter["lr"].latest}, step=self.epoch*self.max_iter + self.iter+1)
             logger.info(
                 "{}, mem: {:.0f}Mb, {}, {}, lr: {:.3e}".format(
                     progress_str,
