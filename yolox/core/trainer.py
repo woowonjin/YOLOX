@@ -13,7 +13,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 import wandb
 import sys
-sys.path.append("/workspace/retrain_tiny/netspresso-compression-toolkit")
+sys.path.append("/workspace/retrain_medium/netspresso-compression-toolkit")
 from yolox.data import DataPrefetcher
 from yolox.utils import (
     MeterBuffer,
@@ -156,6 +156,11 @@ class Trainer:
             print("="*100)
             print("finetune_lr finished !!")
             print("="*100)
+            if torch.cuda.is_available():
+                print("="*100)
+                print("cuda empty cache !!!")
+                print("="*100)
+                torch.cuda.empty_cache()
         else:
             print("="*100)
             print("optimize_lr mode is False")
@@ -169,12 +174,6 @@ class Trainer:
         print("="*100)
         print(f"Learning Rate : {self.exp.basic_lr_per_img}")
         print("="*100)
-
-        if torch.cuda.is_available():
-            print("="*100)
-            print("cuda empty cache !!!")
-            print("="*100)
-            torch.cuda.empty_cache()
 
         try:
             self.train_in_epoch()
@@ -253,7 +252,7 @@ class Trainer:
         # model related init
         torch.cuda.set_device(self.local_rank)
         # model = self.exp.get_model()
-        model = torch.load("/workspace/retrain_tiny/YOLOX/compressed_models/tiny_compressed.pt")
+        model = torch.load("/workspace/retrain_medium/YOLOX/compressed_models/medium_compressed.pt")
         logger.info(
             "Model Summary: {}".format(get_model_info(model, self.exp.test_size))
         )
