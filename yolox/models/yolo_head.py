@@ -160,54 +160,58 @@ class YOLOXHead(nn.Module):
             reg_output = self.reg_preds[k](reg_feat) # reg_preds : 256 -> 4 (channel)
             obj_output = self.obj_preds[k](reg_feat) # obj_preds : 256 -> n_anchor * 1 (channel)
              # outputs : [tensor([batch, 16, 68, 120]), tensor([batch, 16, 34, 60]), tensor([batch, 16, 17, 30])]
-            if self.training:
-                output = torch.cat([reg_output, obj_output, cls_output], 1) # [batch, 16, 68, 120]
-                output, grid = self.get_output_and_grid( # strides=[8, 16, 32]
-                    output, k, stride_this_level, xin[0].type()
-                ) # output : [batch, 1*68*120, 16], grid : [1, 1*68*120, 2]
-                x_shifts.append(grid[:, :, 0]) # grid : [... [x, y]]
-                y_shifts.append(grid[:, :, 1])
-                expanded_strides.append(
-                    torch.zeros(1, grid.shape[1])
-                    .fill_(stride_this_level)
-                    .type_as(xin[0])
-                ) # expanded_strides : [[8, 8, 8, 8, .....], [16, 16, 16, ....], [32, 32, 32, ....]]
-                if self.use_l1:
-                    batch_size = reg_output.shape[0]
-                    hsize, wsize = reg_output.shape[-2:]
-                    reg_output = reg_output.view(
-                        batch_size, self.n_anchors, 4, hsize, wsize
-                    ) # [batch, 1, 4, 68, 120] -> 여기서 4는 x, y, width, height인듯
-                    reg_output = reg_output.permute(0, 1, 3, 4, 2).reshape(
-                        batch_size, -1, 4
-                    ) # [batch, 1, 4, 68, 120] -> [batch, 1, 68, 120, 4] -> [batch, 1*68*120, 4] 
-                    origin_preds.append(reg_output.clone())
+            # if self.training:
+            #     output = torch.cat([reg_output, obj_output, cls_output], 1) # [batch, 16, 68, 120]
+            #     output, grid = self.get_output_and_grid( # strides=[8, 16, 32]
+            #         output, k, stride_this_level, xin[0].type()
+            #     ) # output : [batch, 1*68*120, 16], grid : [1, 1*68*120, 2]
+            #     x_shifts.append(grid[:, :, 0]) # grid : [... [x, y]]
+            #     y_shifts.append(grid[:, :, 1])
+            #     expanded_strides.append(
+            #         torch.zeros(1, grid.shape[1])
+            #         .fill_(stride_this_level)
+            #         .type_as(xin[0])
+            #     ) # expanded_strides : [[8, 8, 8, 8, .....], [16, 16, 16, ....], [32, 32, 32, ....]]
+            #     if self.use_l1:
+            #         batch_size = reg_output.shape[0]
+            #         hsize, wsize = reg_output.shape[-2:]
+            #         reg_output = reg_output.view(
+            #             batch_size, self.n_anchors, 4, hsize, wsize
+            #         ) # [batch, 1, 4, 68, 120] -> 여기서 4는 x, y, width, height인듯
+            #         reg_output = reg_output.permute(0, 1, 3, 4, 2).reshape(
+            #             batch_size, -1, 4
+            #         ) # [batch, 1, 4, 68, 120] -> [batch, 1, 68, 120, 4] -> [batch, 1*68*120, 4] 
+            #         origin_preds.append(reg_output.clone())
 
-            else:
+            # else:
                 # output = torch.cat(
                 #     [reg_output, obj_output.sigmoid(), cls_output.sigmoid()], 1
                 # )
-                print(f"Training_mode is False")
-                output = torch.cat(
-                   [reg_output, obj_output, cls_output], 1
-                )
+                # print(f"Training_mode is False")
+            output = torch.cat(
+               [reg_output, obj_output, cls_output], 1
+            )
             # 다른점 : training시에는 get_output_and_grid함수에서 output의 (x, y, w, h) 에 grid값을 더해주고 stride값을 곱해주지만
             # eval모드에서는 그렇지 않고 obj_output과 cls_output에 sigmoid를 해준다.
 
             outputs.append(output)
+        outputs = torch.cat(
+            [x.flatten(start_dim=2) for x in outputs], dim=2
+        ).permute(0, 2, 1)
+        return outputs
         # training_mode outputs : [tensor([batch, 1*68*120, 16]), tensor([batch, 1*34*60, 16]), tensor([batch, 1*17*30, 16])]
         # eval_mode outputs : [tensor([batch, 16, 68, 120]), tensor([batch, 16, 34, 60]), tensor([batch, 16, 17, 30])]
-        if self.training:
-            return self.get_losses(
-                imgs, # [batch, 3, 544, 960]
-                x_shifts, # [[1, 1*68*120], [1, 1*34*60], [1, 1*17*30]]
-                y_shifts, # [[1, 1*68*120], [1, 1*34*60], [1, 1*17*30]]
-                expanded_strides, # expanded_strides : [[8]*8160, [16]*2040, [32]*510]
-                labels, # [batch, 120, 5]
-                torch.cat(outputs, 1), # [batch, 10710, 16]
-                origin_preds, # [[batch, 1*68*120, 4], [batch, 1*34*60, 4], [batch, 1*17*30, 4]]
-                dtype=xin[0].dtype,
-            )
+        # if self.training:
+        #     return self.get_losses(
+        #         imgs, # [batch, 3, 544, 960]
+        #         x_shifts, # [[1, 1*68*120], [1, 1*34*60], [1, 1*17*30]]
+        #         y_shifts, # [[1, 1*68*120], [1, 1*34*60], [1, 1*17*30]]
+        #         expanded_strides, # expanded_strides : [[8]*8160, [16]*2040, [32]*510]
+        #         labels, # [batch, 120, 5]
+        #         torch.cat(outputs, 1), # [batch, 10710, 16]
+        #         origin_preds, # [[batch, 1*68*120, 4], [batch, 1*34*60, 4], [batch, 1*17*30, 4]]
+        #         dtype=xin[0].dtype,
+        #     )
         # elif self.compress_mode:
             # outputs = torch.cat(
                 # [x.flatten(start_dim=2) for x in outputs], dim=2
@@ -217,24 +221,24 @@ class YOLOXHead(nn.Module):
             # print("self.compress_mode == True")
             # print("="*50)
             # return outputs 
-        else:
-            self.hw = [x.shape[-2:] for x in outputs] # [[68, 120], [34, 60], [17, 30]]
+        # else:
+            # self.hw = [x.shape[-2:] for x in outputs] # [[68, 120], [34, 60], [17, 30]]
             # [batch, n_anchors_all, 85]
-            outputs = torch.cat(
-                [x.flatten(start_dim=2) for x in outputs], dim=2
-            ).permute(0, 2, 1)
-            if self.decode_in_inference:
-                print("="*50)
-                print("self.compress_mode == False")
-                print("self.decode_in_inference == True")
-                print("="*50)
-                return self.decode_outputs(outputs, dtype=xin[0].type())
-            else:
-                print("="*50)
-                print("self.compress_mode == False")
-                print("self.decode_in_inference == False")
-                print("="*50)
-                return outputs
+            # outputs = torch.cat(
+                # [x.flatten(start_dim=2) for x in outputs], dim=2
+            # ).permute(0, 2, 1)
+            # if self.decode_in_inference:
+                # print("="*50)
+                # print("self.compress_mode == False")
+                # print("self.decode_in_inference == True")
+                # print("="*50)
+                # return self.decode_outputs(outputs, dtype=xin[0].type())
+            # else:
+                # print("="*50)
+                # print("self.compress_mode == False")
+                # print("self.decode_in_inference == False")
+                # print("="*50)
+                # return outputs
 
     def get_output_and_grid(self, output, k, stride, dtype):
 
