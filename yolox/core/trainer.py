@@ -252,7 +252,8 @@ class Trainer:
         # model related init
         torch.cuda.set_device(self.local_rank)
         # model = self.exp.get_model()
-        model = torch.load("/workspace/retrain_medium/YOLOX/compressed_models/medium_compressed.pt")
+        #model = torch.load("/workspace/retrain_medium/YOLOX/compressed_models/medium_compressed.pt")
+        model = self.exp.model
         logger.info(
             "Model Summary: {}".format(get_model_info(model, self.exp.test_size))
         )
