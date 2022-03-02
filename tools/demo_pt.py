@@ -72,7 +72,10 @@ if __name__ == '__main__':
     # output = session.run(None, ort_inputs)
     # predictions = demo_postprocess(output[0], input_shape, p6=args.with_p6)[0]
     model = torch.load(args.model)
-    output = model(torch.tensor(img).view(1, 3, input_shape[0], input_shape[1])).detach().numpy()
+    output = model(torch.tensor(img).view(1, 3, input_shape[0], input_shape[1])).detach()
+    output[..., 4:].sigmoid_()
+    output = output.numpy()
+    #output = model(torch.tensor(img).view(1, 3, input_shape[0], input_shape[1])).detach().numpy()
     predictions = demo_postprocess(output, input_shape, p6=args.with_p6)[0]
 
     boxes = predictions[:, :4]
