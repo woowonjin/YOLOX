@@ -193,7 +193,7 @@ class VOCDetection(Dataset):
         target = ET.parse(self._annopath % img_id).getroot()
 
         assert self.target_transform is not None
-        res, img_info = self.target_transform(target)
+        res, img_info = self.target_transform(target) # [xmin, ymin, xmax, ymax, label_ind], (height, width)
         height, width = img_info
 
         r = min(self.img_size[0] / height, self.img_size[1] / width)

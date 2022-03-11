@@ -1,6 +1,9 @@
 ### Linux ###
 *~
 
+nohup.out
+compressed_models/*
+
 # user experiments directory
 YOLOX_outputs/
 datasets/

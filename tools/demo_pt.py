@@ -9,11 +9,12 @@ import cv2
 import numpy as np
 
 import onnxruntime
-
+import sys
+sys.path.append("/workspace/retrain_medium/netspresso-compression-toolkit")
 from yolox.data.data_augment import preproc as preprocess
 from yolox.data.datasets import COCO_CLASSES
 from yolox.utils import mkdir, multiclass_nms, demo_postprocess, vis
-
+import torch
 
 def make_parser():
     parser = argparse.ArgumentParser("onnxruntime inference sample")
@@ -65,13 +66,17 @@ if __name__ == '__main__':
     input_shape = tuple(map(int, args.input_shape.split(',')))
     origin_img = cv2.imread(args.image_path)
     img, ratio = preprocess(origin_img, input_shape)
+    # session = onnxruntime.InferenceSession(args.model)
 
-    session = onnxruntime.InferenceSession(args.model)
-
-    ort_inputs = {session.get_inputs()[0].name: img[None, :, :, :]}
-    output = session.run(None, ort_inputs)
-    # print(f"output[0] : {len(output[0])}, {len(output[0][0])}, {len(output[0][0][0])}")
-    predictions = demo_postprocess(output[0], input_shape, p6=args.with_p6)[0]
+    # ort_inputs = {session.get_inputs()[0].name: img[None, :, :, :]}
+    # output = session.run(None, ort_inputs)
+    # predictions = demo_postprocess(output[0], input_shape, p6=args.with_p6)[0]
+    model = torch.load(args.model)
+    output = model(torch.tensor(img).view(1, 3, input_shape[0], input_shape[1])).detach()
+    output[..., 4:].sigmoid_()
+    output = output.numpy()
+    #output = model(torch.tensor(img).view(1, 3, input_shape[0], input_shape[1])).detach().numpy()
+    predictions = demo_postprocess(output, input_shape, p6=args.with_p6)[0]
 
     boxes = predictions[:, :4]
     scores = predictions[:, 4:5] * predictions[:, 5:]

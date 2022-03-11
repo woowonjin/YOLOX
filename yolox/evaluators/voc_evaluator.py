@@ -106,6 +106,8 @@ class VOCEvaluator:
                 if decoder is not None:
                     outputs = decoder(outputs, dtype=outputs.type())
 
+                outputs = self.decode_outputs(outputs)
+
                 if is_time_record:
                     infer_end = time_synchronized()
                     inference_time += infer_end - start
@@ -128,6 +130,30 @@ class VOCEvaluator:
         eval_results = self.evaluate_prediction(data_list, statistics)
         synchronize()
         return eval_results
+
+    def decode_outputs(self, outputs):
+        outputs[..., 4:].sigmoid_()
+        hw = [[68, 120], [34, 60], [17, 30]]
+        default_strides = [8, 16, 32]
+        dtype = torch.FloatTensor
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        grids = []
+        strides = []
+        outputs = outputs.to(device)
+        for (hsize, wsize), stride in zip(hw, default_strides):
+            yv, xv = torch.meshgrid([torch.arange(hsize), torch.arange(wsize)])
+            grid = torch.stack((xv, yv), 2).view(1, -1, 2)
+            grids.append(grid)
+            shape = grid.shape[:2]
+            strides.append(torch.full((*shape, 1), stride))
+        grids = torch.cat(grids, dim=1).type(dtype).to(device)
+        strides = torch.cat(strides, dim=1).type(dtype).to(device)
+
+        outputs[..., :2] = (outputs[..., :2] + grids) * strides
+        outputs[..., 2:4] = torch.exp(outputs[..., 2:4]) * strides
+        return outputs
+
+        
 
     def convert_to_voc_format(self, outputs, info_imgs, ids):
         predictions = {}
