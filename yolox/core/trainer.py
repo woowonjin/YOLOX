@@ -13,7 +13,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 import wandb
 import sys
-sys.path.append("/workspace/retrain_medium/netspresso-compression-toolkit")
+sys.path.append("/workspace/small_L2_I/netspresso-compression-toolkit")
 from yolox.data import DataPrefetcher
 from yolox.utils import (
     MeterBuffer,
@@ -252,7 +252,7 @@ class Trainer:
         # model related init
         torch.cuda.set_device(self.local_rank)
         # model = self.exp.get_model()
-        #model = torch.load("/workspace/retrain_medium/YOLOX/compressed_models/medium_compressed.pt")
+        #model = torch.load("/workspace/small_L2_I/YOLOX/compressed_models/medium_compressed.pt")
         model = self.exp.model
         logger.info(
             "Model Summary: {}".format(get_model_info(model, self.exp.test_size))
@@ -316,10 +316,10 @@ class Trainer:
             self.train_loader.close_mosaic()
             logger.info("--->Add additional L1 loss now!")
             if self.is_distributed:
-                self.criteria.use_l1 = True
+                self.criteria.use_l1 = False
                 # self.model.module.head.use_l1 = True
             else:
-                self.criteria.use_l1 = True
+                self.criteria.use_l1 = False
                 # self.model.head.use_l1 = True
             # self.exp.eval_interval = 1
             if not self.no_aug:
