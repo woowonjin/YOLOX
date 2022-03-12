@@ -1,6 +1,6 @@
 import sys
-sys.path.append("/workspace/retrain_medium/YOLOX")
-sys.path.append("/workspace/retrain_medium/netspresso-compression-toolkit")
+sys.path.append("/workspace/small_L2_I/YOLOX")
+sys.path.append("/workspace/small_L2_I/netspresso-compression-toolkit")
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -254,6 +254,7 @@ class RetrainUtils(nn.Module):
 
 
     def get_l1_target(self, l1_target, gt, stride, x_shifts, y_shifts, eps=1e-8):
+        stride = stride.to(self.device)
         l1_target[:, 0] = gt[:, 0] / stride - x_shifts
         l1_target[:, 1] = gt[:, 1] / stride - y_shifts
         l1_target[:, 2] = torch.log(gt[:, 2] / stride + eps)
@@ -522,7 +523,7 @@ class RetrainUtils(nn.Module):
 
 if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = torch.load("/workspace/retrain_medium/YOLOX/compressed_models/medium_compressed.pt").to(device)
+    model = torch.load("/workspace/small_L2_I/YOLOX/compressed_models/small_compressed.pt").to(device)
     dummy_input = torch.randn(16, 3, 544, 960).to(device)
     preds = model(dummy_input)
     # preds.requires_grad = True
@@ -531,7 +532,8 @@ if __name__ == "__main__":
     labels[:, :, 0] = label
     labels[:, 30:, :] = 0
     criterion = RetrainUtils()
-    loss = criterion(preds, labels)
+    criterion.use_l1 = True
+    loss = criterion(preds, labels, dummy_input)
     # print(preds)
     # splited = util.split_output(preds)
     # x_shifts, y_shifts, expanded_strides, outputs, origin_preds, dtype = util.get_outputs_for_train(splited)
