@@ -20,6 +20,9 @@ def make_parser():
         "--output-name", type=str, default="yolox.onnx", help="output name of models"
     )
     parser.add_argument(
+        "--model", type=str, default="tiny_retrained.pt", help="output name of models"
+    )
+    parser.add_argument(
         "--input", default="images", type=str, help="input node name of onnx model"
     )
     parser.add_argument(
@@ -54,7 +57,10 @@ def make_parser():
 
 class new_model(nn.Module):
     def __init__(self, model):
-        self.model = model
+        super().__init__()
+        pt_model = torch.load(model)
+        self.model = pt_model
+
     def forward(self, x):
         output = self.model(x)
         output[..., 4:].sigmoid_()
@@ -72,8 +78,7 @@ def main():
         args.experiment_name = exp.exp_name
 
     # model = exp.get_model()
-    pt_model = torch.load(args.model)
-    model = new_model(pt_model)
+    model = new_model(args.model)
     model.eval()
     # if args.ckpt is None:
     #     file_name = os.path.join(exp.output_dir, args.experiment_name)
