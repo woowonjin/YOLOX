@@ -63,7 +63,8 @@ class new_model(nn.Module):
 
     def forward(self, x):
         output = self.model(x)
-        output[..., 4:].sigmoid_()
+        output = output[..., 4:].sigmoid()
+        # output[..., 4:].sigmoid_()
         return output
 
 
