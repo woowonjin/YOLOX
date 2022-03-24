@@ -10,7 +10,8 @@ from loguru import logger
 import torch
 import torch.backends.cudnn as cudnn
 import wandb
-
+import sys
+sys.path.append("/workspace/retrain_medium/YOLOX")
 from yolox.core import Trainer, launch
 from yolox.exp import get_exp
 from yolox.utils import configure_nccl, configure_omp, get_num_devices
@@ -20,7 +21,7 @@ def make_parser():
     parser = argparse.ArgumentParser("YOLOX train parser")
     parser.add_argument("-expn", "--experiment-name", type=str, default=None)
     parser.add_argument("-n", "--name", type=str, default=None, help="model name")
-
+    parser.add_argument("--optimize_lr", type=bool, default=False, help="use optimized lr")
     # distributed
     parser.add_argument(
         "--dist-backend", default="nccl", type=str, help="distributed backend"
@@ -35,6 +36,11 @@ def make_parser():
     parser.add_argument(
         "-d", "--devices", default=None, type=int, help="device for training"
     )
+
+    parser.add_argument(
+        "--lr_ratio", default=0, type=int, help="learning_rate_ratio"
+    )
+
     parser.add_argument(
         "-f",
         "--exp_file",
@@ -112,9 +118,21 @@ def main(exp, args):
     configure_omp()
     cudnn.benchmark = True
 
-    trainer = Trainer(exp, args)
-    trainer.train()
+    wandb.login()
+    if args.optimize_lr:
+        trainer = Trainer(exp, args, mode="optimize_lr")
+    else:
+        trainer = Trainer(exp, args)
+    # if args.optimize_lr:
+    #     finetuned_lr = trainer.finetune_lr()
+    #     trainer.exp.basic_lr_per_img = finetuned_lr
+    #     trainer.mode = "train"
+    #     print("="*100)
+    #     print(f"after the finetune_lr function")
+    #     print(f"finetuned_lr : {finetuned_lr}")
+    #     print("="*100)
 
+    trainer.train()
 
 if __name__ == "__main__":
     args = make_parser().parse_args()
@@ -122,7 +140,6 @@ if __name__ == "__main__":
     exp.merge(args.opts)
 
     ### wandb login
-    wandb.login()
 
     if not args.experiment_name:
         args.experiment_name = exp.exp_name

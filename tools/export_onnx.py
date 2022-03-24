@@ -20,6 +20,9 @@ def make_parser():
         "--output-name", type=str, default="yolox.onnx", help="output name of models"
     )
     parser.add_argument(
+        "--model", type=str, default="tiny_retrained.pt", help="output name of models"
+    )
+    parser.add_argument(
         "--input", default="images", type=str, help="input node name of onnx model"
     )
     parser.add_argument(
@@ -28,7 +31,7 @@ def make_parser():
     parser.add_argument(
         "-o", "--opset", default=11, type=int, help="onnx opset version"
     )
-    parser.add_argument("--batch-size", type=int, default=1, help="batch size")
+    parser.add_argument("--batch-size", type=int, default=4, help="batch size")
     parser.add_argument(
         "--dynamic", action="store_true", help="whether the input shape should be dynamic or not"
     )
@@ -52,6 +55,18 @@ def make_parser():
 
     return parser
 
+class new_model(nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        pt_model = torch.load(model)
+        self.model = pt_model
+
+    def forward(self, x):
+        output = self.model(x)
+        output = output[..., 4:].sigmoid()
+        # output[..., 4:].sigmoid_()
+        return output
+
 
 @logger.catch
 def main():
@@ -63,22 +78,24 @@ def main():
     if not args.experiment_name:
         args.experiment_name = exp.exp_name
 
-    model = exp.get_model()
-    if args.ckpt is None:
-        file_name = os.path.join(exp.output_dir, args.experiment_name)
-        ckpt_file = os.path.join(file_name, "best_ckpt.pth")
-    else:
-        ckpt_file = args.ckpt
-
-    # load the model state dict
-    ckpt = torch.load(ckpt_file, map_location="cpu")
-
+    # model = exp.get_model()
+    model = new_model(args.model)
     model.eval()
-    if "model" in ckpt:
-        ckpt = ckpt["model"]
-    model.load_state_dict(ckpt)
-    model = replace_module(model, nn.SiLU, SiLU)
-    model.head.decode_in_inference = False
+    # if args.ckpt is None:
+    #     file_name = os.path.join(exp.output_dir, args.experiment_name)
+    #     ckpt_file = os.path.join(file_name, "best_ckpt.pth")
+    # else:
+    #     ckpt_file = args.ckpt
+
+    # # load the model state dict
+    # ckpt = torch.load(ckpt_file, map_location="cpu")
+
+    # model.eval()
+    # if "model" in ckpt:
+    #     ckpt = ckpt["model"]
+    # model.load_state_dict(ckpt)
+    # model = replace_module(model, nn.SiLU, SiLU)
+    # model.head.decode_in_inference = False
 
     logger.info("loading checkpoint done.")
     dummy_input = torch.randn(args.batch_size, 3, exp.test_size[0], exp.test_size[1])

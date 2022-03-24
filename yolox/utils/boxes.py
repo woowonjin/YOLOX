@@ -77,29 +77,33 @@ def postprocess(prediction, num_classes, conf_thre=0.7, nms_thre=0.45, class_agn
 
 
 def bboxes_iou(bboxes_a, bboxes_b, xyxy=True):
+    # bboxes_a : ground_truth box -> [num_gt, 4]
+    # bboxes_b : preds box -> [fg_num, 4]
     if bboxes_a.shape[1] != 4 or bboxes_b.shape[1] != 4:
         raise IndexError
-
+    # 여기서는  xyxy == False
+    # print(f"gt_bboxes : {bboxes_a.size()}, preds_bboxes : {bboxes_b.size()}")
     if xyxy:
         tl = torch.max(bboxes_a[:, None, :2], bboxes_b[:, :2])
         br = torch.min(bboxes_a[:, None, 2:], bboxes_b[:, 2:])
         area_a = torch.prod(bboxes_a[:, 2:] - bboxes_a[:, :2], 1)
         area_b = torch.prod(bboxes_b[:, 2:] - bboxes_b[:, :2], 1)
     else:
+        # bbox -> center_x, center_y, w, h
         tl = torch.max(
             (bboxes_a[:, None, :2] - bboxes_a[:, None, 2:] / 2),
             (bboxes_b[:, :2] - bboxes_b[:, 2:] / 2),
-        )
+        ) # -> overlap되는 직사각형의 왼쪽 위 꼭짓점 -> [num_gt, fg_num, 2] -> num_gt각각과, fg_num각각을 모두 비교한다.
         br = torch.min(
             (bboxes_a[:, None, :2] + bboxes_a[:, None, 2:] / 2),
             (bboxes_b[:, :2] + bboxes_b[:, 2:] / 2),
-        )
+        ) # -> overlap되는 직사각형의 오른쪽 아래 꼭짓점 -> [num_gt, fg_num, 2] -> num_gt각각과, fg_num각각을 모두 비교한다.
 
-        area_a = torch.prod(bboxes_a[:, 2:], 1)
-        area_b = torch.prod(bboxes_b[:, 2:], 1)
+        area_a = torch.prod(bboxes_a[:, 2:], 1) # 곱셈 -> [num_gt]
+        area_b = torch.prod(bboxes_b[:, 2:], 1) # 곱셈 -> [num_fg]
     en = (tl < br).type(tl.type()).prod(dim=2)
     area_i = torch.prod(br - tl, 2) * en  # * ((tl < br).all())
-    return area_i / (area_a[:, None] + area_b - area_i)
+    return area_i / (area_a[:, None] + area_b - area_i) # [num_gt, fg_num] -> num_gt각각과, fg_num각각을 모두 비교한다.
 
 
 def matrix_iou(a, b):
