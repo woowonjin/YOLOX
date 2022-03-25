@@ -11,7 +11,7 @@ import torch
 import torch.backends.cudnn as cudnn
 import wandb
 import sys
-sys.path.append("/workspace/retrain_medium/YOLOX")
+sys.path.append("/workspace/code_refact/YOLOX")
 from yolox.core import Trainer, launch
 from yolox.exp import get_exp
 from yolox.utils import configure_nccl, configure_omp, get_num_devices
