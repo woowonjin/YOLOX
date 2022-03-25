@@ -269,14 +269,6 @@ class RetrainUtils(nn.Module):
         labels,
         mode="gpu",
     ):
-        # if mode == "cpu":
-            # print("------------CPU Mode for This Batch-------------")
-            # gt_bboxes_per_image = gt_bboxes_per_image.cpu().float()
-            # bboxes_preds_per_image = bboxes_preds_per_image.cpu().float()
-            # gt_classes = gt_classes.cpu().float()
-            # expanded_strides = expanded_strides.cpu().float()
-            # x_shifts = x_shifts.cpu()
-            # y_shifts = y_shifts.cpu()
         gt_bboxes_per_image = gt_bboxes_per_image.to(self.device)
         bboxes_preds_per_image = bboxes_preds_per_image.to(self.device)
         gt_classes = gt_classes.to(self.device)
@@ -298,10 +290,6 @@ class RetrainUtils(nn.Module):
         obj_preds_ = obj_preds[batch_idx][fg_mask] # [fg_num, 1]
         num_in_boxes_anchor = bboxes_preds_per_image.shape[0]
 
-        # if mode == "cpu":
-        #     gt_bboxes_per_image = gt_bboxes_per_image.cpu()
-        #     bboxes_preds_per_image = bboxes_preds_per_image.cpu()
-        # print(f"gt_bboxes : {gt_bboxes_per_image.type()}, preds_bboxes : {bboxes_preds_per_image.type()}") # FloatTensor, FloatTensor
         pair_wise_ious = bboxes_iou(gt_bboxes_per_image, bboxes_preds_per_image, False)
 
         gt_cls_per_image = (
@@ -312,14 +300,9 @@ class RetrainUtils(nn.Module):
         )
         pair_wise_ious_loss = -torch.log(pair_wise_ious + 1e-8)
 
-        # if mode == "cpu":
-        #     cls_preds_, obj_preds_ = cls_preds_.cpu(), obj_preds_.cpu()
         cls_preds_ = cls_preds_.to(self.device)
         obj_preds_ = obj_preds_.to(self.device)
 
-        # with torch.cuda.amp.autocast(enabled=False):
-            # cls_preds : [fg_num, 11]
-            # obj_preds : [fg_num, 1]
         with torch.cuda.amp.autocast(enabled=False):
             cls_preds_ = (
                 cls_preds_.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid_()
@@ -347,11 +330,6 @@ class RetrainUtils(nn.Module):
 
         del pair_wise_cls_loss, cost, pair_wise_ious, pair_wise_ious_loss
 
-        # if mode == "cpu":
-        #     gt_matched_classes = gt_matched_classes.cuda()
-        #     fg_mask = fg_mask.cuda()
-        #     pred_ious_this_matching = pred_ious_this_matching.cuda()
-        #     matched_gt_inds = matched_gt_inds.cuda()
         gt_matched_classes = gt_matched_classes.to(self.device)
         fg_mask = fg_mask.to(self.device)
         pred_ious_this_matching = pred_ious_this_matching.to(self.device)

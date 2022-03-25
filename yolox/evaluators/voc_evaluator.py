@@ -132,7 +132,7 @@ class VOCEvaluator:
         return eval_results
 
     def decode_outputs(self, outputs):
-        outputs[..., 4:].sigmoid_()
+        outputs = torch.cat([outputs[..., :4], outputs[..., 4:].sigmoid()], dim=-1)
         hw = [[68, 120], [34, 60], [17, 30]]
         default_strides = [8, 16, 32]
         dtype = torch.FloatTensor

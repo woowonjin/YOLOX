@@ -63,8 +63,7 @@ class new_model(nn.Module):
 
     def forward(self, x):
         output = self.model(x)
-        output = output[..., 4:].sigmoid()
-        # output[..., 4:].sigmoid_()
+        output = torch.cat([output[..., :4], output[..., 4:].sigmoid()], dim=-1)
         return output
 
 

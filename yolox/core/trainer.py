@@ -83,7 +83,6 @@ class Trainer:
         criterion = copy.deepcopy(self.criteria)
         optimizer = copy.deepcopy(self.optimizer)
         scheduler = copy.deepcopy(self.lr_scheduler)
-        # b4fine_tune_acc, _ = test(args, _model, test_loader)
         ap50_95, b4fine_tune_acc, summary = self.exp.eval(
             default_model, self.evaluator, self.is_distributed
         )
@@ -169,7 +168,6 @@ class Trainer:
             self.after_iter()
 
     def train_one_iter(self):
-        # print(f"train one iter start!!")
         iter_start_time = time.time()
         inps, targets = self.prefetcher.next()
         inps = inps.to(self.data_type)
@@ -398,7 +396,6 @@ class Trainer:
 
     def save_ckpt(self, ckpt_name, update_best_ckpt=False):
         if self.rank == 0:
-            # save_model = self.ema_model.ema if self.use_model_ema else self.model
             save_model = self.model
             logger.info("Save weights to {}".format(self.file_name))
             ckpt_state = {
