@@ -123,14 +123,6 @@ def main(exp, args):
         trainer = Trainer(exp, args, mode="optimize_lr")
     else:
         trainer = Trainer(exp, args)
-    # if args.optimize_lr:
-    #     finetuned_lr = trainer.finetune_lr()
-    #     trainer.exp.basic_lr_per_img = finetuned_lr
-    #     trainer.mode = "train"
-    #     print("="*100)
-    #     print(f"after the finetune_lr function")
-    #     print(f"finetuned_lr : {finetuned_lr}")
-    #     print("="*100)
 
     trainer.train()
 
@@ -139,12 +131,8 @@ if __name__ == "__main__":
     exp = get_exp(args.exp_file, args.name)
     exp.merge(args.opts)
 
-    ### wandb login
-
     if not args.experiment_name:
         args.experiment_name = exp.exp_name
-
-    # wandb.config.update(args)
 
     num_gpu = get_num_devices() if args.devices is None else args.devices
     assert num_gpu <= get_num_devices()
