@@ -116,13 +116,15 @@ class Trainer:
         return ap50_95, b4fine_tune_acc, self.exp.basic_lr_per_img
 
     def train(self):
-        wandb.init(entity="woowonjin", project="Nota-yolox", name=self.args.run_name, config=self.args) # group=self.args.run_name)
+        if self.args.use_wandb:
+            wandb.init(entity="woowonjin", project="Nota-yolox", name=self.args.run_name, config=self.args) # group=self.args.run_name)
         if self.mode == "optimize_lr":
             print("="*100)
             print("optimize_lr mode is True")
             print("="*100)
             ap50_95, ap50, finetuned_lr = self.finetune_lr()
-            wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=0)
+            if self.args.use_wandb:
+                wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=0)
             print("="*100)
             print("finetune_lr finished !!")
             print("="*100)
@@ -139,7 +141,8 @@ class Trainer:
             ap50_95, ap50, summary = self.exp.eval(
                 self.model, self.evaluator, self.is_distributed
             )
-            wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=0)
+            if self.args.use_wandb:
+                wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=0)
 
         print("="*100)
         print(f"Learning Rate : {self.exp.basic_lr_per_img}")
@@ -180,7 +183,7 @@ class Trainer:
             preds = self.model(inps)
             outputs = self.criteria(preds, targets, inps)
         loss = outputs["total_loss"]
-        if self.mode == "train":
+        if self.mode == "train" and self.args.use_wandb:
             wandb.log({"loss": loss}, step=self.epoch+1)
         self.optimizer.zero_grad()
         self.scaler.scale(loss).backward()
@@ -389,7 +392,7 @@ class Trainer:
             self.tblogger.add_scalar("val/COCOAP50_95", ap50_95, self.epoch + 1)
             logger.info("\n" + summary)
         synchronize()
-        if self.mode == "train":
+        if self.mode == "train" and self.args.use_wandb:
             wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=self.epoch+1)
 
         self.save_ckpt("last_epoch", ap50_95 > self.best_ap)

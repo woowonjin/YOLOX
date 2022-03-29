@@ -22,6 +22,7 @@ def make_parser():
     parser.add_argument("-expn", "--experiment-name", type=str, default=None)
     parser.add_argument("-n", "--name", type=str, default=None, help="model name")
     parser.add_argument("--optimize_lr", type=bool, default=False, help="use optimized lr")
+    parser.add_argument("--use_wandb", type=bool, default=False, help="Use Wandb")
     # distributed
     parser.add_argument(
         "--dist-backend", default="nccl", type=str, help="distributed backend"
@@ -117,8 +118,8 @@ def main(exp, args):
     configure_nccl()
     configure_omp()
     cudnn.benchmark = True
-
-    wandb.login()
+    if args.use_wandb:
+        wandb.login()
     if args.optimize_lr:
         trainer = Trainer(exp, args, mode="optimize_lr")
     else:
