@@ -49,7 +49,7 @@ def make_parser():
     parser.add_argument(
         "--input_shape",
         type=str,
-        default="640,640",
+        default="544,960",
         help="Specify an input shape for inference.",
     )
     parser.add_argument(
