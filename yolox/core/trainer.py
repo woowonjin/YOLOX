@@ -117,7 +117,7 @@ class Trainer:
 
     def train(self):
         if self.args.use_wandb:
-            wandb.init(project="doc_test", name=self.args.run_name, config=self.args) # group=self.args.run_name)
+            wandb.init(project="Nota-YOLOX", name=self.args.run_name, config=self.args) # group=self.args.run_name)
         if self.mode == "optimize_lr":
             print("="*100)
             print("optimize_lr mode is True")
