@@ -5,7 +5,6 @@
 import datetime
 import os
 import time
-from YOLOX.yolox.utils import raw_metrics
 from loguru import logger
 import copy
 
