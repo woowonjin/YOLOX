@@ -21,7 +21,6 @@ class Exp(MyExp):
         self.eval_interval = 1
 
         self.exp_name = os.path.split(os.path.realpath(__file__))[1].split(".")[0]
-        self.model = torch.load("/workspace/code_refact/YOLOX/compressed_models/medium_compressed.pt")
 
     def get_data_loader(self, batch_size, is_distributed, no_aug=False, cache_img=False):
         from yolox.data import (

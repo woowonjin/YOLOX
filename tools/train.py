@@ -24,6 +24,7 @@ def make_parser():
     parser.add_argument("-n", "--name", type=str, default=None, help="model name")
     parser.add_argument("--optimize_lr", type=bool, default=False, help="use optimized lr")
     parser.add_argument("--use_wandb", type=bool, default=False, help="Use Wandb")
+    parser.add_argument("--model", type=str, help="model path", default=None)
     # distributed
     parser.add_argument(
         "--dist-backend", default="nccl", type=str, help="distributed backend"

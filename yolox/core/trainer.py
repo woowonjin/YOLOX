@@ -42,6 +42,8 @@ class Trainer:
         # before_train methods.
         self.exp = exp
         self.args = args
+        if self.args.model:
+            self.exp.model = torch.load(self.args.model)
         self.exp.basic_lr_per_img /= (10**self.args.lr_ratio)
         self.previous_lr = self.exp.basic_lr_per_img
         self.mode = mode
@@ -218,8 +220,10 @@ class Trainer:
 
         # model related init
         torch.cuda.set_device(self.local_rank)
-        model = self.exp.model
-        # model = self.exp.get_model()
+        if self.args.model:
+            model = self.exp.model
+        else:
+            model = self.exp.get_model()
         logger.info(
             "Model Summary: {}".format(get_model_info(model, self.exp.test_size))
         )
