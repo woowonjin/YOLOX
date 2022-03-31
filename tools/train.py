@@ -11,7 +11,8 @@ import torch
 import torch.backends.cudnn as cudnn
 import wandb
 import sys
-sys.path.append("/workspace/code_refact/YOLOX")
+import os
+sys.path.append(os.getcwd())
 from yolox.core import Trainer, launch
 from yolox.exp import get_exp
 from yolox.utils import configure_nccl, configure_omp, get_num_devices
@@ -23,6 +24,7 @@ def make_parser():
     parser.add_argument("-n", "--name", type=str, default=None, help="model name")
     parser.add_argument("--optimize_lr", type=bool, default=False, help="use optimized lr")
     parser.add_argument("--use_wandb", type=bool, default=False, help="Use Wandb")
+    parser.add_argument("--model", type=str, help="model path", default=None)
     # distributed
     parser.add_argument(
         "--dist-backend", default="nccl", type=str, help="distributed backend"

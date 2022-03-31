@@ -13,7 +13,10 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 import wandb
 import sys
-sys.path.append("/workspace/code_refact/netspresso-compression-toolkit")
+paths = os.getcwd().split("/")[0:-1]
+base_path = "/".join(paths)
+nets_path = os.path.join(base_path, "netspresso-compression-toolkit")
+sys.path.append(nets_path)
 from yolox.data import DataPrefetcher
 from yolox.utils import (
     MeterBuffer,
@@ -40,6 +43,8 @@ class Trainer:
         # before_train methods.
         self.exp = exp
         self.args = args
+        if self.args.model:
+            self.exp.model = torch.load(self.args.model)
         self.exp.basic_lr_per_img /= (10**self.args.lr_ratio)
         self.previous_lr = self.exp.basic_lr_per_img
         self.mode = mode
@@ -216,8 +221,10 @@ class Trainer:
 
         # model related init
         torch.cuda.set_device(self.local_rank)
-        model = self.exp.model
-        # model = self.exp.get_model()
+        if self.args.model:
+            model = self.exp.model
+        else:
+            model = self.exp.get_model()
         logger.info(
             "Model Summary: {}".format(get_model_info(model, self.exp.test_size))
         )
