@@ -57,7 +57,7 @@ class RawMetrics:
         return total_post_class_dict
 
 
-    def _count_res(self, pred_bboxes, pred_labels, actual_bboxes, actual_labels, iou_thr=0.5):
+    def _count_res(self, pred_bboxes, pred_labels, actual_bboxes, actual_labels, iou_thr):
         cnt = {
             "car": np.array([0, 0]), 
             "bus": np.array([0, 0]), 
@@ -193,7 +193,7 @@ class RawMetrics:
                 result["point"].append(r["points"])
                 result["label"].append(r["label"])
                 
-            actual_labels, actual_bboxes = self.get_actual_bboxes(xml_path=f"{self.annotation_dir}/{line}.xml")
+            actual_labels, actual_bboxes = self._get_actual_bboxes(xml_path=f"{self.annotation_dir}/{line}.xml")
             
             cnt = self._count_res(
                 pred_bboxes=result["point"], 
