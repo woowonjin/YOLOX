@@ -4,7 +4,10 @@ import os
 import torch
 import torch.distributed as dist
 import sys
-sys.path.append("/workspace/code_refact/netspresso-compression-toolkit")
+paths = os.getcwd().split("/")[0:-1]
+base_path = "/".join(paths)
+nets_path = os.path.join(base_path, "netspresso-compression-toolkit")
+sys.path.append(nets_path)
 from yolox.data import get_yolox_datadir
 from yolox.exp import Exp as MyExp
 
