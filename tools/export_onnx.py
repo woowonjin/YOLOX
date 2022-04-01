@@ -63,8 +63,7 @@ class new_model(nn.Module):
 
     def forward(self, x):
         output = self.model(x)
-        output = output[..., 4:].sigmoid()
-        # output[..., 4:].sigmoid_()
+        output = torch.cat([output[..., :4], output[..., 4:].sigmoid()], dim=-1)
         return output
 
 
@@ -78,24 +77,8 @@ def main():
     if not args.experiment_name:
         args.experiment_name = exp.exp_name
 
-    # model = exp.get_model()
     model = new_model(args.model)
     model.eval()
-    # if args.ckpt is None:
-    #     file_name = os.path.join(exp.output_dir, args.experiment_name)
-    #     ckpt_file = os.path.join(file_name, "best_ckpt.pth")
-    # else:
-    #     ckpt_file = args.ckpt
-
-    # # load the model state dict
-    # ckpt = torch.load(ckpt_file, map_location="cpu")
-
-    # model.eval()
-    # if "model" in ckpt:
-    #     ckpt = ckpt["model"]
-    # model.load_state_dict(ckpt)
-    # model = replace_module(model, nn.SiLU, SiLU)
-    # model.head.decode_in_inference = False
 
     logger.info("loading checkpoint done.")
     dummy_input = torch.randn(args.batch_size, 3, exp.test_size[0], exp.test_size[1])

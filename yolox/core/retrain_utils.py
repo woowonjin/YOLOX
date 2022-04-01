@@ -1,6 +1,4 @@
 import sys
-sys.path.append("/workspace/small_L2_I/YOLOX")
-sys.path.append("/workspace/small_L2_I/netspresso-compression-toolkit")
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -15,7 +13,6 @@ class RetrainUtils(nn.Module):
         super().__init__()
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.xin_type = dtype
-        # self.xin_type = torch.FloatTensor
         self.hw = [[68, 120], [34, 60], [17, 30]] # self.hw * strides = [960, 544]
         self.default_input_size = [544, 960]
         self.strides = [8, 16, 32]
@@ -29,10 +26,24 @@ class RetrainUtils(nn.Module):
         self.num_classes = 11
 
         self.use_l1 = False
-
-    # def split_output(self, output):
-    #     return torch.split(output, [self.hw[0][0]*self.hw[0][1], self.hw[1][0]*self.hw[1][1], self.hw[2][0]*self.hw[2][1]], dim=1)
     
+    def forward(self, preds, labels, inps):
+        labels = labels.to(self.device)
+        preds = preds.to(self.device)
+        self.input_h = inps.size(2)
+        self.input_w = inps.size(3)
+        x_shifts, y_shifts, expanded_strides, outputs, origin_preds, dtype = self.get_outputs_for_train(preds)
+        loss, iou_loss, conf_loss, cls_loss, l1_loss, num_fg = self.get_losses(x_shifts, y_shifts, expanded_strides, labels, outputs, origin_preds, dtype)
+        outputs = {
+            "total_loss": loss,
+            "iou_loss": iou_loss,
+            "l1_loss": l1_loss,
+            "conf_loss": conf_loss,
+            "cls_loss": cls_loss,
+            "num_fg": num_fg,
+        }
+        return outputs
+
     def get_outputs_for_train(self, outputs):
         origin_preds = []
         x_shifts = []
@@ -67,7 +78,6 @@ class RetrainUtils(nn.Module):
                 .type(self.xin_type)
             )
             if self.use_l1:
-                batch_size = output.shape[0]
                 reg_output = output[:, :, :4].clone()
                 origin_preds.append(reg_output)
             all_outputs.append(output)
@@ -76,22 +86,13 @@ class RetrainUtils(nn.Module):
 
     def get_output_and_grid(self, output, k, stride, dtype):
         grid = self.grids[k]
-        batch_size = output.shape[0]
         hsize, wsize = self.new_hw[k]
-        # print(f"input_size: [{self.input_h}, {self.input_w}], output : {output.size()}, ratio : [{height_ratio}, {width_ratio}],[{self.hw[k]}] -> [{hsize}, {wsize}]")
-        # output : [batch, 68*120, 16]
         if grid.shape[2:4] != torch.Size([hsize, wsize]):
             yv, xv = torch.meshgrid([torch.arange(hsize), torch.arange(wsize)], indexing=None)
             grid = torch.stack((xv, yv), 2).view(1, 1, hsize, wsize, 2).type(dtype) # [ [ [ [[0, 0], [1, 0], [2,0] ...], [ [0, 1], [1, 1]... ] ] ] ]
             self.grids[k] = grid # [1, 1, 68, 120, 2]
         grid = grid.view(1, -1, 2).to(self.device) # grid : [1, 1*68*120, 2]
-        # True, False -> Error
-        # False, False -> OK
-        # 기존 yolox-s 는 True, False
-        # print(f"output : {output.get_device()}, grid : {grid.get_device()}, device : {self.device}")
-        # print(f"output : {output[..., :2].size()}, grid : {grid.size()}, k {k}")
         output[..., :2] = (output[..., :2] + grid) * stride # stride = 8
-        # print(f"type : {output[..., 2:4].type()}, output : {output[..., 2:4]}")
         output[..., 2:4] = torch.exp(output[..., 2:4].type(self.xin_type)) * stride
         return output, grid # output : [batch, 1*68*120, 16], grid : [1, 1*68*120, 2]
 
@@ -127,7 +128,6 @@ class RetrainUtils(nn.Module):
                 obj_target = outputs.new_zeros((total_num_anchors, 1))
                 fg_mask = outputs.new_zeros(total_num_anchors).bool()
             else:
-                # print(f"labels : {labels.type()}")
                 gt_bboxes_per_image = labels[batch_idx, :num_gt, 1:5]
                 gt_classes = labels[batch_idx, :num_gt, 0]
                 bboxes_preds_per_image = bbox_preds[batch_idx]
@@ -212,27 +212,18 @@ class RetrainUtils(nn.Module):
         fg_masks = torch.cat(fg_masks, 0) # [10710*batch]
         if self.use_l1:
             l1_targets = torch.cat(l1_targets, 0)
-        # print(f"iou : {bbox_preds.view(-1, 4)[fg_masks].size()}, {reg_targets.size()}")
         num_fg = max(num_fg, 1)
         loss_iou = (
             self.iou_loss(bbox_preds.view(-1, 4)[fg_masks], reg_targets)
         ).sum() / num_fg
-        # print(f"size : {bbox_preds.size()} bbox_preds : {bbox_preds}")
-        # print(f"size : {reg_targets.size()} reg_targets : {reg_targets}")
-        # print(f"obj : {obj_preds.view(-1, 1).size()}, {obj_targets.size()}")
-        # print(f"obj : {obj_preds.get_device()}, {obj_targets.get_device()}")
         loss_obj = (
             self.bcewithlog_loss(obj_preds.view(-1, 1), obj_targets)
         ).sum() / num_fg
-        # print(f"cls : {cls_preds.view(-1, self.num_classes)[fg_masks].size()}, {cls_targets.size()}")
-        # print(f"cls_preds : {cls_preds.type()}, cls_targets : {cls_targets.type()}")
         loss_cls = (
             self.bcewithlog_loss(
                 cls_preds.view(-1, self.num_classes)[fg_masks], cls_targets
             )
         ).sum() / num_fg
-        # print(f"size : {cls_preds.size()} cls_preds : {cls_preds}")
-        # print(f"size : {cls_targets.size()} cls_targets : {cls_targets}")
         if self.use_l1:
             loss_l1 = (
                 self.l1_loss(origin_preds.view(-1, 4)[fg_masks], l1_targets)
@@ -240,7 +231,6 @@ class RetrainUtils(nn.Module):
         else:
             loss_l1 = 0.0
         reg_weight = 5.0
-        # print(f"loss_iou : {loss_iou}, loss_obj : {loss_obj}, loss_cls : {loss_cls}")
         loss = reg_weight * loss_iou + loss_obj + loss_cls + loss_l1
 
         return (
@@ -279,14 +269,6 @@ class RetrainUtils(nn.Module):
         labels,
         mode="gpu",
     ):
-        # if mode == "cpu":
-            # print("------------CPU Mode for This Batch-------------")
-            # gt_bboxes_per_image = gt_bboxes_per_image.cpu().float()
-            # bboxes_preds_per_image = bboxes_preds_per_image.cpu().float()
-            # gt_classes = gt_classes.cpu().float()
-            # expanded_strides = expanded_strides.cpu().float()
-            # x_shifts = x_shifts.cpu()
-            # y_shifts = y_shifts.cpu()
         gt_bboxes_per_image = gt_bboxes_per_image.to(self.device)
         bboxes_preds_per_image = bboxes_preds_per_image.to(self.device)
         gt_classes = gt_classes.to(self.device)
@@ -308,10 +290,6 @@ class RetrainUtils(nn.Module):
         obj_preds_ = obj_preds[batch_idx][fg_mask] # [fg_num, 1]
         num_in_boxes_anchor = bboxes_preds_per_image.shape[0]
 
-        # if mode == "cpu":
-        #     gt_bboxes_per_image = gt_bboxes_per_image.cpu()
-        #     bboxes_preds_per_image = bboxes_preds_per_image.cpu()
-        # print(f"gt_bboxes : {gt_bboxes_per_image.type()}, preds_bboxes : {bboxes_preds_per_image.type()}") # FloatTensor, FloatTensor
         pair_wise_ious = bboxes_iou(gt_bboxes_per_image, bboxes_preds_per_image, False)
 
         gt_cls_per_image = (
@@ -322,21 +300,16 @@ class RetrainUtils(nn.Module):
         )
         pair_wise_ious_loss = -torch.log(pair_wise_ious + 1e-8)
 
-        # if mode == "cpu":
-        #     cls_preds_, obj_preds_ = cls_preds_.cpu(), obj_preds_.cpu()
         cls_preds_ = cls_preds_.to(self.device)
         obj_preds_ = obj_preds_.to(self.device)
 
-        # with torch.cuda.amp.autocast(enabled=False):
-            # cls_preds : [fg_num, 11]
-            # obj_preds : [fg_num, 1]
         with torch.cuda.amp.autocast(enabled=False):
             cls_preds_ = (
                 cls_preds_.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid_()
                 * obj_preds_.float().unsqueeze(0).repeat(num_gt, 1, 1).sigmoid_()
             )
-                # cls_preds_ : [num_gt, fg_num, 11]
-                # gt_cls_per_image : [num_gt, fg_num. 11]
+            # cls_preds_ : [num_gt, fg_num, 11]
+            # gt_cls_per_image : [num_gt, fg_num. 11]
             pair_wise_cls_loss = F.binary_cross_entropy(
                 cls_preds_.sqrt_(), gt_cls_per_image, reduction="none"
             ).sum(-1)
@@ -357,11 +330,6 @@ class RetrainUtils(nn.Module):
 
         del pair_wise_cls_loss, cost, pair_wise_ious, pair_wise_ious_loss
 
-        # if mode == "cpu":
-        #     gt_matched_classes = gt_matched_classes.cuda()
-        #     fg_mask = fg_mask.cuda()
-        #     pred_ious_this_matching = pred_ious_this_matching.cuda()
-        #     matched_gt_inds = matched_gt_inds.cuda()
         gt_matched_classes = gt_matched_classes.to(self.device)
         fg_mask = fg_mask.to(self.device)
         pred_ious_this_matching = pred_ious_this_matching.to(self.device)
@@ -386,7 +354,6 @@ class RetrainUtils(nn.Module):
     ):
         gt_bboxes_per_image = gt_bboxes_per_image.to(self.device)
         expanded_strides_per_image = expanded_strides[0].to(self.device)
-        # print(f"stride : {expanded_strides_per_image.get_device()}, x_shifts[0] : {x_shifts[0].get_device()}")
         x_shifts_per_image = x_shifts[0] * expanded_strides_per_image
         y_shifts_per_image = y_shifts[0]  * expanded_strides_per_image
         
@@ -423,8 +390,6 @@ class RetrainUtils(nn.Module):
         )
 
         # 각 grid의 center로 부터 거리인듯? -> 각 object와 각 grid의 center 간의 거리 [num_fg, num_anchors]
-        # print(f"x_centers_per_image : {x_centers_per_image.size()}, gt_bboxes_per_image_l : {gt_bboxes_per_image_l.size()}")
-        # print(f"x_centers : {x_centers_per_image.get_device()}, gt_bboxes : {gt_bboxes_per_image.get_device()}")
         b_l = x_centers_per_image - gt_bboxes_per_image_l 
         b_r = gt_bboxes_per_image_r - x_centers_per_image 
         b_t = y_centers_per_image - gt_bboxes_per_image_t
@@ -485,7 +450,6 @@ class RetrainUtils(nn.Module):
         anchor_matching_gt = matching_matrix.sum(0) # 각 anchor마다 matching되는 gt의 갯수 [fg_num]
         if (anchor_matching_gt > 1).sum() > 0: # gt와 1개 이상 matching되는 anchor가 1개 이상일때
             _, cost_argmin = torch.min(cost[:, anchor_matching_gt > 1], dim=0) # matching되는 anchor중 gt와 cost가 가장 작은 gt의 idx를 고른다.
-            # cost_argmin : 
             matching_matrix[:, anchor_matching_gt > 1] *= 0
             matching_matrix[cost_argmin, anchor_matching_gt > 1] = 1
         fg_mask_inboxes = matching_matrix.sum(0) > 0 # -> anchor중 위의 조건을 만족하는 gt와 매칭이되면 True else False [num_fg]
@@ -500,51 +464,3 @@ class RetrainUtils(nn.Module):
         ]
 
         return num_fg, gt_matched_classes, pred_ious_this_matching, matched_gt_inds
-
-    def forward(self, preds, labels, inps):
-        labels = labels.to(self.device)
-        preds = preds.to(self.device)
-        self.input_h = inps.size(2)
-        self.input_w = inps.size(3)
-        # splited = self.split_output(preds)
-        x_shifts, y_shifts, expanded_strides, outputs, origin_preds, dtype = self.get_outputs_for_train(preds)
-        loss, iou_loss, conf_loss, cls_loss, l1_loss, num_fg = self.get_losses(x_shifts, y_shifts, expanded_strides, labels, outputs, origin_preds, dtype)
-        outputs = {
-            "total_loss": loss,
-            "iou_loss": iou_loss,
-            "l1_loss": l1_loss,
-            "conf_loss": conf_loss,
-            "cls_loss": cls_loss,
-            "num_fg": num_fg,
-        }
-        return outputs
-
-        
-
-if __name__ == "__main__":
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = torch.load("/workspace/small_L2_I/YOLOX/compressed_models/small_compressed.pt").to(device)
-    dummy_input = torch.randn(16, 3, 544, 960).to(device)
-    preds = model(dummy_input)
-    # preds.requires_grad = True
-    labels = torch.randn(16, 120, 5)
-    label = torch.randint(0, 11, (16, 120)).float()
-    labels[:, :, 0] = label
-    labels[:, 30:, :] = 0
-    criterion = RetrainUtils()
-    criterion.use_l1 = True
-    loss = criterion(preds, labels, dummy_input)
-    # print(preds)
-    # splited = util.split_output(preds)
-    # x_shifts, y_shifts, expanded_strides, outputs, origin_preds, dtype = util.get_outputs_for_train(splited)
-    # print(labels.size())
-    # print(f"x_shifts : {x_shifts[0].size()}, y_shifts: {y_shifts[0].size()}, expanded_strides: {expanded_strides[0].size()}, outputs: {outputs.size()}, origin_preds: {origin_preds[0].size()}, dtype: {dtype}")
-    # util.get_losses(x_shifts, y_shifts, expanded_strides, labels, outputs, origin_preds, dtype)
-
-        
-# outputs : {
-#     'total_loss': tensor(5.9143, device='cuda:0', grad_fn=<AddBackward0>), 
-#     'iou_loss': tensor(1.9648, device='cuda:0', dtype=torch.float16, grad_fn=<MulBackward0>), 
-#     'l1_loss': 0.0, 'conf_loss': tensor(3.3502, device='cuda:0', grad_fn=<DivBackward0>), 
-#     'cls_loss': tensor(0.5993, device='cuda:0', grad_fn=<DivBackward0>), 
-#     'num_fg': 5.9411764705882355}

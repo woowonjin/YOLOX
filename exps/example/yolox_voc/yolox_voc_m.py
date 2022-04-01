@@ -4,7 +4,10 @@ import os
 import torch
 import torch.distributed as dist
 import sys
-sys.path.append("/workspace/retrain_medium/netspresso-compression-toolkit")
+paths = os.getcwd().split("/")[0:-1]
+base_path = "/".join(paths)
+nets_path = os.path.join(base_path, "netspresso-compression-toolkit")
+sys.path.append(nets_path)
 from yolox.data import get_yolox_datadir
 from yolox.exp import Exp as MyExp
 
@@ -18,7 +21,6 @@ class Exp(MyExp):
         self.eval_interval = 1
 
         self.exp_name = os.path.split(os.path.realpath(__file__))[1].split(".")[0]
-        self.model = torch.load("/workspace/retrain_medium/YOLOX/compressed_models/medium_compressed.pt")
 
     def get_data_loader(self, batch_size, is_distributed, no_aug=False, cache_img=False):
         from yolox.data import (

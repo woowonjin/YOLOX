@@ -7,10 +7,11 @@ import os
 
 import cv2
 import numpy as np
-
-import onnxruntime
 import sys
-sys.path.append("/workspace/retrain_medium/netspresso-compression-toolkit")
+paths = os.getcwd().split("/")[0:-1]
+base_path = "/".join(paths)
+nets_path = os.path.join(base_path, "netspresso-compression-toolkit")
+sys.path.append(nets_path)
 from yolox.data.data_augment import preproc as preprocess
 from yolox.data.datasets import COCO_CLASSES
 from yolox.utils import mkdir, multiclass_nms, demo_postprocess, vis
@@ -49,7 +50,7 @@ def make_parser():
     parser.add_argument(
         "--input_shape",
         type=str,
-        default="640,640",
+        default="544,960",
         help="Specify an input shape for inference.",
     )
     parser.add_argument(
@@ -66,11 +67,7 @@ if __name__ == '__main__':
     input_shape = tuple(map(int, args.input_shape.split(',')))
     origin_img = cv2.imread(args.image_path)
     img, ratio = preprocess(origin_img, input_shape)
-    # session = onnxruntime.InferenceSession(args.model)
-
-    # ort_inputs = {session.get_inputs()[0].name: img[None, :, :, :]}
-    # output = session.run(None, ort_inputs)
-    # predictions = demo_postprocess(output[0], input_shape, p6=args.with_p6)[0]
+    
     model = torch.load(args.model)
     output = model(torch.tensor(img).view(1, 3, input_shape[0], input_shape[1])).detach()
     output[..., 4:].sigmoid_()

@@ -11,7 +11,8 @@ import torch
 import torch.backends.cudnn as cudnn
 import wandb
 import sys
-sys.path.append("/workspace/retrain_medium/YOLOX")
+import os
+sys.path.append(os.getcwd())
 from yolox.core import Trainer, launch
 from yolox.exp import get_exp
 from yolox.utils import configure_nccl, configure_omp, get_num_devices
@@ -22,6 +23,8 @@ def make_parser():
     parser.add_argument("-expn", "--experiment-name", type=str, default=None)
     parser.add_argument("-n", "--name", type=str, default=None, help="model name")
     parser.add_argument("--optimize_lr", type=bool, default=False, help="use optimized lr")
+    parser.add_argument("--use_wandb", type=bool, default=False, help="Use Wandb")
+    parser.add_argument("--model", type=str, help="model path", default=None)
     # distributed
     parser.add_argument(
         "--dist-backend", default="nccl", type=str, help="distributed backend"
@@ -117,20 +120,12 @@ def main(exp, args):
     configure_nccl()
     configure_omp()
     cudnn.benchmark = True
-
-    wandb.login()
+    if args.use_wandb:
+        wandb.login()
     if args.optimize_lr:
         trainer = Trainer(exp, args, mode="optimize_lr")
     else:
         trainer = Trainer(exp, args)
-    # if args.optimize_lr:
-    #     finetuned_lr = trainer.finetune_lr()
-    #     trainer.exp.basic_lr_per_img = finetuned_lr
-    #     trainer.mode = "train"
-    #     print("="*100)
-    #     print(f"after the finetune_lr function")
-    #     print(f"finetuned_lr : {finetuned_lr}")
-    #     print("="*100)
 
     trainer.train()
 
@@ -139,12 +134,8 @@ if __name__ == "__main__":
     exp = get_exp(args.exp_file, args.name)
     exp.merge(args.opts)
 
-    ### wandb login
-
     if not args.experiment_name:
         args.experiment_name = exp.exp_name
-
-    # wandb.config.update(args)
 
     num_gpu = get_num_devices() if args.devices is None else args.devices
     assert num_gpu <= get_num_devices()

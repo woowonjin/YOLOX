@@ -13,7 +13,10 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.tensorboard import SummaryWriter
 import wandb
 import sys
-sys.path.append("/workspace/small_L2_I/netspresso-compression-toolkit")
+paths = os.getcwd().split("/")[0:-1]
+base_path = "/".join(paths)
+nets_path = os.path.join(base_path, "netspresso-compression-toolkit")
+sys.path.append(nets_path)
 from yolox.data import DataPrefetcher
 from yolox.utils import (
     MeterBuffer,
@@ -32,6 +35,7 @@ from yolox.utils import (
     synchronize
 )
 from .retrain_utils import RetrainUtils
+from yolox.utils.raw_metrics import RawMetrics
 
 class Trainer:
     def __init__(self, exp, args, mode="train"):
@@ -39,6 +43,8 @@ class Trainer:
         # before_train methods.
         self.exp = exp
         self.args = args
+        if self.args.model:
+            self.exp.model = torch.load(self.args.model)
         self.exp.basic_lr_per_img /= (10**self.args.lr_ratio)
         self.previous_lr = self.exp.basic_lr_per_img
         self.mode = mode
@@ -75,10 +81,6 @@ class Trainer:
 
     def finetune_lr(self):
         self.before_train()
-        # wandb.init(entity="woowonjin", project="Nota-yolox", config=self.args, group=self.args.run_name)
-        print("="*100)
-        print("in finetune_lr function!!")
-        print("="*100)
         device = "cuda" if torch.cuda.is_available() else "cpu"
         default_model = copy.deepcopy(self.model)
         default_model.eval()
@@ -87,57 +89,31 @@ class Trainer:
         criterion = copy.deepcopy(self.criteria)
         optimizer = copy.deepcopy(self.optimizer)
         scheduler = copy.deepcopy(self.lr_scheduler)
-        # b4fine_tune_acc, _ = test(args, _model, test_loader)
-        print("="*100)
-        print("first Evaluation Start for calculating b4fine_tune_acc")
-        print("="*100)
         ap50_95, b4fine_tune_acc, summary = self.exp.eval(
             default_model, self.evaluator, self.is_distributed
         )
-        print("="*100)
-        print("End Evaluation Start for calculating b4fine_tune_acc")
-        print("="*100)
         b4fine_tune_acc = b4fine_tune_acc - acceptable_deterioration
-        print(f"b4fine_tune_acc : {b4fine_tune_acc}")
         while (after_tune_acc < (b4fine_tune_acc)):
-            print(f"new_lr : {self.exp.basic_lr_per_img}")
             self.model = copy.deepcopy(default_model).to(device)
-            # criterion = self.criteria
-            # optimizer = self.optimizer
-            # scheduler = self.lr_scheduler
             self.train_in_epoch()
             _, after_tune_acc, summary = self.exp.eval(
                 self.model, self.evaluator, self.is_distributed
             )
             if (after_tune_acc < b4fine_tune_acc):
                 self.exp.basic_lr_per_img = self.exp.basic_lr_per_img/10
-                print("="*100)
-                print(f"Learning Rate is updated to {self.exp.basic_lr_per_img}!!")
-                print(f"before : {b4fine_tune_acc}, after : {after_tune_acc}")
-                print("="*100)
                 self.lr_scheduler = self.exp.get_lr_scheduler(
                     self.exp.basic_lr_per_img * self.args.batch_size, self.max_iter
                 )
                 self.criteria = criterion
                 self.optimizer = optimizer
                 scheduler = copy.deepcopy(self.lr_scheduler)
-            # elif after_tune_acc==0.01 and b4fine_tune_acc==0.01:
-            #     return args.lr_list[-1]
             else:
-                print("="*100)
-                print(f"this lr is ok, lr : {self.exp.basic_lr_per_img}")
-                print(f"before : {b4fine_tune_acc}, after : {after_tune_acc}")
-                print("="*100)
                 self.criteria = criterion
                 self.optimizer = optimizer
                 self.lr_scheduler = scheduler
                 self.model = copy.deepcopy(default_model)
                 self.mode = "train"
                 return ap50_95, b4fine_tune_acc, self.exp.basic_lr_per_img
-        print("="*100)
-        print(f"this lr is ok, lr : {self.exp.basic_lr_per_img}")
-        print(f"before : {b4fine_tune_acc}, after : {after_tune_acc}")
-        print("="*100)
         self.criteria = criterion
         self.optimizer = optimizer
         self.lr_scheduler = scheduler
@@ -146,13 +122,18 @@ class Trainer:
         return ap50_95, b4fine_tune_acc, self.exp.basic_lr_per_img
 
     def train(self):
-        wandb.init(entity="woowonjin", project="Nota-yolox", name=self.args.run_name, config=self.args) # group=self.args.run_name)
+        if self.args.use_wandb:
+            if self.is_distributed:
+                wandb.init(project="Nota-YOLOX", group=self.args.run_name, config=self.args)
+            else:
+                wandb.init(project="Nota-YOLOX", name=self.args.run_name, config=self.args)
         if self.mode == "optimize_lr":
             print("="*100)
             print("optimize_lr mode is True")
             print("="*100)
             ap50_95, ap50, finetuned_lr = self.finetune_lr()
-            wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=0)
+            if self.args.use_wandb:
+                wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=0)
             print("="*100)
             print("finetune_lr finished !!")
             print("="*100)
@@ -169,7 +150,8 @@ class Trainer:
             ap50_95, ap50, summary = self.exp.eval(
                 self.model, self.evaluator, self.is_distributed
             )
-            wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=0)
+            if self.args.use_wandb:
+                wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=0)
 
         print("="*100)
         print(f"Learning Rate : {self.exp.basic_lr_per_img}")
@@ -198,33 +180,21 @@ class Trainer:
             self.after_iter()
 
     def train_one_iter(self):
-        # print(f"train one iter start!!")
         iter_start_time = time.time()
         inps, targets = self.prefetcher.next()
         inps = inps.to(self.data_type)
-        # inps = inps.float()
-        # print(f"data_type : {self.data_type}")
         targets = targets.to(self.data_type)
         targets.requires_grad = False
         inps, targets = self.exp.preprocess(inps, targets, self.input_size) # scaling 작업
         data_end_time = time.time()
 
         with torch.cuda.amp.autocast(enabled=self.amp_training):
-        #     outputs = self.model(inps, targets)
             preds = self.model(inps)
             outputs = self.criteria(preds, targets, inps)
         loss = outputs["total_loss"]
-        # for key, val in outputs.items():
-        #     if key == "num_fg" or key == "l1_loss":
-        #         continue
-        #     # print(f"{key} : {val.type()}")
-        #     print(f"{key} : {val}")
-        #"total_loss", "iou_loss", "l1_loss", "conf_loss", "cls_loss", "num_fg"
-        if self.mode == "train":
+        if self.mode == "train" and self.args.use_wandb:
             wandb.log({"loss": loss}, step=self.epoch+1)
         self.optimizer.zero_grad()
-        # loss.backward()
-        # self.optimizer.step()
         self.scaler.scale(loss).backward()
         self.scaler.step(self.optimizer)
         self.scaler.update()
@@ -251,9 +221,10 @@ class Trainer:
 
         # model related init
         torch.cuda.set_device(self.local_rank)
-        # model = self.exp.get_model()
-        #model = torch.load("/workspace/small_L2_I/YOLOX/compressed_models/medium_compressed.pt")
-        model = self.exp.model
+        if self.args.model:
+            model = self.exp.model
+        else:
+            model = self.exp.get_model()
         logger.info(
             "Model Summary: {}".format(get_model_info(model, self.exp.test_size))
         )
@@ -321,7 +292,6 @@ class Trainer:
             else:
                 self.criteria.use_l1 = False
                 # self.model.head.use_l1 = True
-            # self.exp.eval_interval = 1
             if not self.no_aug:
                 self.save_ckpt(ckpt_name="last_mosaic_epoch")
 
@@ -360,8 +330,6 @@ class Trainer:
             time_str = ", ".join(
                 ["{}: {:.3f}s".format(k, v.avg) for k, v in time_meter.items()]
             )
-            # if self.mode == "train":
-                # wandb.log({"loss": loss_meter["total_loss"].latest, "learning_rate": self.meter["lr"].latest}, step=self.epoch*self.max_iter + self.iter+1)
             logger.info(
                 "{}, mem: {:.0f}Mb, {}, {}, lr: {:.3e}".format(
                     progress_str,
@@ -429,21 +397,33 @@ class Trainer:
         ap50_95, ap50, summary = self.exp.eval(
             evalmodel, self.evaluator, self.is_distributed
         )
+            
+        raw_metrics = RawMetrics()
+        raw_metrics_res = raw_metrics.get_raw_metrics(
+            model=evalmodel,
+            nms_thr=0.45, 
+            score_thr=0.4, 
+            iou_thr=0.5
+        )# raw metrics 로깅을 위한 함수
+        
         self.model.train()
         if self.rank == 0:
             self.tblogger.add_scalar("val/COCOAP50", ap50, self.epoch + 1)
             self.tblogger.add_scalar("val/COCOAP50_95", ap50_95, self.epoch + 1)
             logger.info("\n" + summary)
         synchronize()
-        if self.mode == "train":
+        if self.mode == "train" and self.args.use_wandb:
             wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=self.epoch+1)
+            
+            for metric in raw_metrics_res.keys():
+                wandb.log({metric: raw_metrics_res[metric]}, step=self.epoch+1)
+                print(f"{metric}: {raw_metrics_res[metric]}")
 
         self.save_ckpt("last_epoch", ap50_95 > self.best_ap)
         self.best_ap = max(self.best_ap, ap50_95)
 
     def save_ckpt(self, ckpt_name, update_best_ckpt=False):
         if self.rank == 0:
-            # save_model = self.ema_model.ema if self.use_model_ema else self.model
             save_model = self.model
             logger.info("Save weights to {}".format(self.file_name))
             ckpt_state = {
