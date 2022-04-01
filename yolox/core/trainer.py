@@ -399,7 +399,7 @@ class Trainer:
         )
             
         raw_metrics = RawMetrics()
-        raw_metrics.get_raw_metrics(
+        raw_metrics_res = raw_metrics.get_raw_metrics(
             model=evalmodel,
             nms_thr=0.45, 
             score_thr=0.4, 
@@ -415,8 +415,9 @@ class Trainer:
         if self.mode == "train" and self.args.use_wandb:
             wandb.log({"ap50_95": ap50_95, "ap50": ap50}, step=self.epoch+1)
             
-            for metric in raw_metrics.keys():
-                wandb.log({metric: raw_metrics[metric]})
+            for metric in raw_metrics_res.keys():
+                wandb.log({metric: raw_metrics_res[metric]}, step=self.epoch+1)
+                print(f"{metric}: {raw_metrics_res[metric]}")
 
         self.save_ckpt("last_epoch", ap50_95 > self.best_ap)
         self.best_ap = max(self.best_ap, ap50_95)
